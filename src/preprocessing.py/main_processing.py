@@ -2,18 +2,10 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-from pathlib import Path
 
-
-# 경로 설정
-BASE_DIR = Path(__file__).resolve().parents[2]
-DATA_FILE = BASE_DIR / "data" / "raw" / "train.csv"
-SCALER_FILE = BASE_DIR / "data" / "interim" / "std_scaler_v1.joblib"
-MODEL_FILE = BASE_DIR / "data" / "interim" / "rf_model_v1.joblib"
-df = pd.read_csv(DATA_FILE, encoding='utf-8', low_memory=False)
-
-train_df = pd.read_csv("../../data/raw/train.csv")
-test_df = pd.read_csv("../../data/raw/test.csv")
+train_df = pd.read_csv("C:\\Users\\an100\\OneDrive\\바탕 화면\\test\\main_project1\\data\\train.csv")
+test_df = pd.read_csv("C:\\Users\\an100\\OneDrive\\바탕 화면\\test\\main_project1\\data\\test.csv")
+submission_df = pd.read_csv("C:\\Users\\an100\\OneDrive\\바탕 화면\\test\\main_project1\\data\\submit.csv")
 
 train_df.info()
 train_df.head()
@@ -49,7 +41,11 @@ train_df.drop(columns=["molten_temp"], inplace=True)
 '''
 결측치 처리 (molten_volume)
 '''
+# 시간에 따른 molten_volume 
+train_df["molten_volume"].unique()
+
 train_df.loc[train_df["molten_volume"].isna(), :]
+train_df.groupby("mold_code")["molten_volume"]
 
 custom_colors = {
     8412 : '#2ca02c',
@@ -77,3 +73,56 @@ sns.histplot(data=train_df.loc[(train_df["Coolant_temperature"] < 150) & (train_
 sns.histplot(data=train_df.loc[(train_df["facility_operation_cycleTime"]<150) & (train_df["facility_operation_cycleTime"]>80), :], x='facility_operation_cycleTime', hue='mold_code', palette=custom_colors, kde=True)
 
 
+train_df.isna().sum()
+
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import IterativeImputer
+
+train_df["heating_furnace"]
+
+'''
+결측치 처리 (upper_mold_temp3)
+버리기!
+'''
+train_df["upper_mold_temp3"].unique()
+train_df["upper_mold_temp3"].isna().sum()
+train_df[train_df["upper_mold_temp3"].isna()&train_df["lower_mold_temp3"].isna()]
+train_df[train_df["upper_mold_temp3"].isna()].groupby(["mold_code"])["passorfail"].count()
+train_df[train_df["lower_mold_temp3"].isna()].groupby(["mold_code"])["passorfail"].count()
+train_df[train_df["upper_mold_temp3"].isna()].groupby(["mold_code"])["passorfail"].count()
+
+#mold_code가 8412인 것 
+train_df.loc[train_df["mold_code"] == 8412, "upper_mold_temp3"].unique()
+
+train_df.loc[train_df["mold_code"] == 8412, "upper_mold_temp3">1000].mean()
+
+train_df.loc[train_df["upper_mold_temp3"]< 1000, "passorfail"].value_counts()
+
+train_df[train_df["upper_mold_temp3"].isna()].groupby(["mold_code"])["passorfail"].count()
+
+
+'''
+결측치 처리 (lower_mold_temp3)
+버리기
+'''
+train_df[train_df["lower_mold_temp3"].isna()].groupby(["mold_code"])["passorfail"].count()
+
+train_df.loc[train_df["lower_mold_temp3"]> 1400, "passorfail"].value_counts()
+train_df.loc[train_df["lower_mold_temp3"]> 1400, "mold_code"].count()
+
+
+'''
+결측치 처리 (heating_furnace)
+'''
+train_df.loc[train_df["heating_furnace"].isna(),"mold_code"].value_counts()
+train_df[train_df["heating_furnace"].isna()].groupby(["mold_code","passorfail"])["lower_mold_temp1"].count()
+train_df["heating_furnace"].isna().sum()
+train_df.loc[train_df["heating_furnace"].isna(),"mold_code"].value_counts()
+train_df.loc[:,"mold_code"].value_counts()
+
+train_df["mold_code"] / 
+
+train_df["mold_code"] == ["a"]
+
+train_df[train_df['mold_code'] == 'a']['lower_mold_temp3'].notna().sum()
+train_df[train_df['mold_code'] == 'b']['lower_mold_temp3'].notna().sum()

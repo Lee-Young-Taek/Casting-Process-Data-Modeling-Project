@@ -3,6 +3,14 @@ import numpy as np
 from scipy import stats
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.preprocessing import LabelEncoder
+from pathlib import Path
+
+# 경로 설정
+BASE_DIR = Path(__file__).resolve().parents[2]
+DATA_FILE = BASE_DIR / "data" / "raw" / "train.csv"
+SCALER_FILE = BASE_DIR / "data" / "interim" / "std_scaler_v1.joblib"
+MODEL_FILE = BASE_DIR / "data" / "interim" / "rf_model_v1.joblib"
+df = pd.read_csv(DATA_FILE, encoding='utf-8', low_memory=False)
 
 # 데이터 불러오기
 train_df = pd.read_csv("../../data/raw/train.csv")

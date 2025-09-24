@@ -5,7 +5,17 @@ from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 import joblib
+from pathlib import Path
 
+
+# 경로 설정
+BASE_DIR = Path(__file__).resolve().parents[2]
+DATA_FILE = BASE_DIR / "data" / "raw" / "train.csv"
+SCALER_FILE = BASE_DIR / "data" / "interim" / "std_scaler_v1.joblib"
+MODEL_FILE = BASE_DIR / "data" / "interim" / "rf_model_v1.joblib"
+df = pd.read_csv(DATA_FILE, encoding='utf-8', low_memory=False)
+
+# 데이터 불러오기
 train_df = pd.read_csv("../../data/raw/train.csv")
 test_df = pd.read_csv("../../data/raw/test.csv")
 
