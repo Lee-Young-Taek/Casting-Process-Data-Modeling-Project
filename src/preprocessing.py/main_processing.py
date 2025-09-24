@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-
+ddd
 train_df = pd.read_csv("C:\\Users\\an100\\OneDrive\\바탕 화면\\test\\main_project1\\data\\train.csv")
 test_df = pd.read_csv("C:\\Users\\an100\\OneDrive\\바탕 화면\\test\\main_project1\\data\\test.csv")
 submission_df = pd.read_csv("C:\\Users\\an100\\OneDrive\\바탕 화면\\test\\main_project1\\data\\submit.csv")
