@@ -10,23 +10,11 @@ import joblib
 import base64
 
 APP_DIR = Path(__file__).resolve().parents[1]
-SCORE_V0_PATH = APP_DIR / "data" / "models" / "v0"
-SCORE_V1_PATH = APP_DIR / "data" / "models" / "v1"
-SCORE_V2_PATH = APP_DIR / "data" / "models" / "v2"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REPORTS_DIR = PROJECT_ROOT / "reports"
+PREPROC_VERSION_PDF = REPORTS_DIR / "version_preprocessing_report.pdf"
 
-SCORE_V0_LGBM = SCORE_V0_PATH / "LightGBM_v0_scores.csv"
-SCORE_V1_LGBM = SCORE_V1_PATH / "LightGBM_v1_scores.csv"
-SCORE_V2_LGBM = SCORE_V2_PATH / "LightGBM_v2_scores.csv"
-
-SCORE_V0_RF = SCORE_V0_PATH / "RandomForest_v0_scores.csv"
-SCORE_V1_RF = SCORE_V1_PATH / "RandomForest_v1_scores.csv"
-SCORE_V2_RF = SCORE_V2_PATH / "RandomForest_v2_scores.csv"
-
-SCORE_V0_XGB = SCORE_V0_PATH / "XGBoost_v0_scores.csv"
-SCORE_V1_XGB = SCORE_V1_PATH / "XGBoost_v1_scores.csv"
-SCORE_V2_XGB = SCORE_V2_PATH / "XGBoost_v2_scores.csv"
-
-MODELS = ["LightGBM", "RandomForest", "XGBoost"]
+MODELS = ["LogisticRegression", "LightGBM", "RandomForest", "XGBoost"]
 VERSIONS = ["v0", "v1", "v2"]
 
 DISPLAY_METRIC_MAP = {
@@ -43,8 +31,20 @@ DETAIL_METRIC_FIELDS = [
     ("Recall", "recall"),
 ]
 
-APP_DIR = Path(__file__).resolve().parents[1]
 MODELS_DIR = APP_DIR / "data" / "models"
+MODEL_FILE_PREFIX: dict[str, str] = {
+    "LogisticRegression": "LogReg",
+    "LightGBM": "LightGBM",
+    "RandomForest": "RandomForest",
+    "XGBoost": "XGBoost",
+}
+
+MODEL_DISPLAY_LABELS: dict[str, str] = {
+    "LogisticRegression": "LogisticRegression",
+    "LightGBM": "LightGBM",
+    "RandomForest": "RandomForest",
+    "XGBoost": "XGBoost",
+}
 
 MODEL_METRICS: dict[str, dict[str, dict[str, float]]] = {model: {} for model in MODELS}
 METRIC_VALUES: dict[str, dict[str, dict[str, float]]] = {}
@@ -118,7 +118,8 @@ def _load_model_metrics() -> None:
             continue
 
         for model in MODELS:
-            file_name = f"{model}_{version}_scores.csv"
+            file_prefix = MODEL_FILE_PREFIX.get(model, model)
+            file_name = f"{file_prefix}_{version}_scores.csv"
             file_path = version_dir / file_name
             if not file_path.exists():
                 continue
@@ -164,7 +165,8 @@ def _load_model_artifact(model_name: str, version: str) -> dict | None:
         cached = MODEL_ARTIFACT_CACHE[key]
         return _normalize_artifact_model(cached)
 
-    artifact_path = MODELS_DIR / version / f"{model_name}_{version}.pkl"
+    file_prefix = MODEL_FILE_PREFIX.get(model_name, model_name)
+    artifact_path = MODELS_DIR / version / f"{file_prefix}_{version}.pkl"
     if not artifact_path.exists():
         MODEL_ARTIFACT_CACHE[key] = None
         return None
@@ -374,6 +376,7 @@ custom_css = """
 .metrics-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
     border: 1px solid #dee2e6;
     border-radius: 8px;
     overflow: hidden;
@@ -385,8 +388,10 @@ custom_css = """
     justify-content: center;
     border-right: 1px solid #dee2e6;
     border-bottom: 1px solid #dee2e6;
-    font-size: 1.025rem;
+    font-size: 0.95rem;
     font-weight: 500;
+    text-align: center;
+    padding: 6px;
 }
 .metrics-grid > div:nth-child(4n) {
     border-right: none;
@@ -398,9 +403,25 @@ custom_css = """
     background-color: #f8f9fa;
     font-weight: 600;
 }
+.metrics-grid__header--split {
+    flex-direction: column;
+    padding: 0;
+}
+.metrics-grid__header--split span {
+    flex: 1 1 50%;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.metrics-grid__header--split span:first-child {
+    border-bottom: 1px solid #dee2e6;
+}
 .metrics-grid__row-header {
     background-color: #fdfdfd;
     font-weight: 600;
+    font-size: 0.85rem;
+    line-height: 1.1;
 }
 .metrics-grid__cell--highlight {
     background-color: #2A2D30;
@@ -548,13 +569,20 @@ def _build_metrics_grid(metric_name: str) -> str:
     cells = ["<div class='metrics-grid mt-3'>"]
 
     # Header row
-    cells.append("<div class='metrics-grid__header'>모델</div>")
+    split_header = (
+        "<div class='metrics-grid__header metrics-grid__header--split'>"
+        "<span>전처리 버전</span>"
+        "<span>모델</span>"
+        "</div>"
+    )
+    cells.append(split_header)
     for version in VERSIONS:
         cells.append(f"<div class='metrics-grid__header'>{version}</div>")
 
     # Body rows
     for model in MODELS:
-        cells.append("<div class='metrics-grid__row-header'>{}</div>".format(model))
+        display_label = MODEL_DISPLAY_LABELS.get(model, model)
+        cells.append("<div class='metrics-grid__row-header'>{}</div>".format(display_label))
         for version in VERSIONS:
             value = metric_data.get(model, {}).get(version)
             cell_classes = ["metrics-grid__cell"]
@@ -745,7 +773,29 @@ def panel_body():
                     ui.card_header("모델 선택"),
                     ui.card_body(
                         ui.output_ui("metric_button_row"),
-                        ui.output_ui("metrics_grid"),
+                        ui.div(ui.output_ui("metrics_grid"), class_="mt-2"),
+                        ui.div(
+                            ui.download_button(
+                                "download_preproc_pdf",
+                                ui.HTML('<i class="fa-solid fa-file-pdf"></i> 버전별 전처리 PDF 다운로드'),
+                                style="""
+                                    background: linear-gradient(135deg, #ec685f 0%, #eb6056 100%);
+                                    color: white;
+                                    border: none;
+                                    padding: 10px 20px;
+                                    font-size: 15px;
+                                    font-weight: 600;
+                                    border-radius: 20px;
+                                    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.2);
+                                    transition: all 0.3s ease;
+                                    cursor: pointer;
+                                    display: inline-flex;
+                                    align-items: center;
+                                    gap: 8px;
+                                """
+                            ),
+                            class_="d-flex w-100 justify-content-end",
+                        ),
                         class_="w-100 d-flex flex-column gap-3 flex-grow-1",
                     ),
                     class_="card-no-gap card-equal",
@@ -828,4 +878,28 @@ def server(input, output, session):
 
         model_name, version = highlight
         return _build_insight_tabs(model_name, version)
+
+    @render.download(filename="version_preprocessing_report.pdf")
+    def download_preproc_pdf():
+        if PREPROC_VERSION_PDF.exists():
+            with PREPROC_VERSION_PDF.open("rb") as f:
+                chunk = f.read(8192)
+                while chunk:
+                    yield chunk
+                    chunk = f.read(8192)
+        else:
+            placeholder_pdf = (
+                b"%PDF-1.4\n"
+                b"1 0 obj<<>>endobj\n"
+                b"2 0 obj<< /Type /Catalog /Pages 3 0 R >>endobj\n"
+                b"3 0 obj<< /Type /Pages /Kids [4 0 R] /Count 1 >>endobj\n"
+                b"4 0 obj<< /Type /Page /Parent 3 0 R /MediaBox [0 0 300 144] /Contents 5 0 R >>endobj\n"
+                b"5 0 obj<< /Length 90 >>stream\n"
+                b"BT /F1 12 Tf 24 100 Td (Version preprocessing report missing) Tj ET\n"
+                b"endstream endobj\n"
+                b"6 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n"
+                b"xref\n0 7\n0000000000 65535 f \n0000000010 00000 n \n0000000050 00000 n \n0000000102 00000 n \n0000000162 00000 n \n0000000258 00000 n \n0000000358 00000 n \n"
+                b"trailer<< /Size 7 /Root 2 0 R >>\nstartxref\n408\n%%EOF\n"
+            )
+            yield placeholder_pdf
 
