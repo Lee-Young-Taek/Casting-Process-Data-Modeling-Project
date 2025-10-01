@@ -101,46 +101,46 @@ EVIDENCE_DESC = {
 def panel_body():
     css = ui.head_content(
     ui.tags.style("""
-    .preprocessing-tab .card .nav { margin-bottom: 0.75rem; }
-    .preprocessing-tab .left-col { padding-right: 1rem; border-right: 1px solid #eee; }
-    .preprocessing-tab .right-col { padding-left: 1rem; }
-    .preprocessing-tab .muted { color: #6c757d; }
+        .card .nav { margin-bottom: 0.75rem; }
+        .left-col { padding-right: 1rem; border-right: 1px solid #eee; }
+        .right-col { padding-left: 1rem; }
+        .muted { color: #6c757d; }
          /* 탭 메뉴 색상 변경 */
-        .preprocessing-tab .nav-tabs .nav-link {
+        .nav-tabs .nav-link {
             background-color: #2A2D30;
             color: white;
             border: none;
             margin-right: 4px;
         }
-        .preprocessing-tab .nav-tabs .nav-link:hover {
+        .nav-tabs .nav-link:hover {
             background-color: #686f7d;
         }
-        .preprocessing-tab .nav-tabs .nav-link.active {
+        .nav-tabs .nav-link.active {
             background-color: #6c6a6a;
             color: white;
         }
         /* 상단 툴바 */
-        .preprocessing-tab .topbar{
+        .topbar{
             display:flex; justify-content:space-between; align-items:center;
             gap:.75rem; margin-bottom:.75rem;
         }
-        .preprocessing-tab .topbar .right{ display:flex; align-items:center; gap:.5rem; }
+        .topbar .right{ display:flex; align-items:center; gap:.5rem; }
         
         /* PDF 버튼 호버 효과 */
-        .preprocessing-tab .topbar button:hover {
+        .topbar button:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(220, 53, 69, 0.4) !important;
         }
-        .preprocessing-tab .topbar button:active {
+        .topbar button:active {
             transform: translateY(0px);
         }
         
         /* 접기 박스 */
-        .preprocessing-tab details.details-box { margin-top: .75rem; }
-        .preprocessing-tab details.details-box > summary { cursor: pointer; font-weight: 600; }
+        details.details-box { margin-top: .75rem; }
+        details.details-box > summary { cursor: pointer; font-weight: 600; }
         
         /* 아코디언 스타일 */
-        .preprocessing-tab .accordion-section { 
+        .accordion-section { 
             background: white; 
             border-radius: 16px; 
             margin-bottom: 20px; 
@@ -150,7 +150,7 @@ def panel_body():
             margin-left: ;
             margin-right: 1000;
         }
-        .preprocessing-tab .accordion-header { 
+        .accordion-header { 
             background: #2A2D30; 
             color: white; 
             padding: 20px 28px; 
@@ -164,10 +164,10 @@ def panel_body():
             font-weight: 600; 
             border-radius: 16px 16px 0 0;
         }
-        .preprocessing-tab .accordion-header:hover { 
+        .accordion-header:hover { 
             background-color: #1f2428;
         }
-        .preprocessing-tab .accordion-content { 
+        .accordion-content { 
             padding: 24px 28px; 
             background: #ffffff; 
             border-radius: 0 0 16px 16px;
@@ -193,58 +193,57 @@ def panel_body():
         )
 
     return ui.TagList(
+        "데이터 전처리 요약",
         css,
-        ui.div(
-            "데이터 전처리 요약",
 
-            # 상단 검색창 스타일 제목 + PDF 버튼
-            ui.div(
-            ui.div(
-                ui.HTML('<i class="fa-solid fa-magnifying-glass" style="color: #9ca3af; margin-right: 14px; font-size: 16px;"></i>'),
-                ui.span("데이터 전처리 요약", style="color: #6b7280; font-size: 15px; font-weight: 400;"),
+        # 상단 검색창 스타일 제목 + PDF 버튼
+        ui.div(
+        ui.div(
+            ui.HTML('<i class="fa-solid fa-magnifying-glass" style="color: #9ca3af; margin-right: 14px; font-size: 16px;"></i>'),
+            ui.span("데이터 전처리 요약", style="color: #6b7280; font-size: 15px; font-weight: 400;"),
+            style="""
+                background: white;
+                border: 1px solid #d1d5db;
+                border-radius: 24px;
+                padding: 14px 20px;
+                display: flex;
+                align-items: center;
+                flex: 1;
+                max-width: 400px;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+                margin-left: 20px;
+                margin-top: 20px;
+            """
+        ),
+        ui.div(
+            ui.download_button(
+                "download_pdf", 
+                ui.HTML('<i class="fa-solid fa-file-pdf"></i> PDF 다운로드'),
                 style="""
-                    background: white;
-                    border: 1px solid #d1d5db;
-                    border-radius: 24px;
-                    padding: 14px 20px;
-                    display: flex;
+                    background: linear-gradient(135deg, #ec685f 0%, #eb6056 100%);
+                    color: white;
+                    border: none;
+                    padding: 10px 20px;
+                    font-size: 15px;
+                    font-weight: 600;
+                    border-radius: 20px;    
+                    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.2);
+                    transition: all 0.3s ease;
+                    cursor: pointer;
+                    margin-right: 40px;
+                    display: inline-flex;
                     align-items: center;
-                    flex: 1;
-                    max-width: 400px;
-                    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-                    margin-left: 20px;
-                    margin-top: 20px;
+                    height: 41px;
                 """
             ),
-            ui.div(
-                ui.download_button(
-                    "download_pdf", 
-                    ui.HTML('<i class="fa-solid fa-file-pdf"></i> PDF 다운로드'),
-                    style="""
-                        background: linear-gradient(135deg, #ec685f 0%, #eb6056 100%);
-                        color: white;
-                        border: none;
-                        padding: 10px 20px;
-                        font-size: 15px;
-                        font-weight: 600;
-                        border-radius: 20px;    
-                        box-shadow: 0 4px 12px rgba(220, 53, 69, 0.2);
-                        transition: all 0.3s ease;
-                        cursor: pointer;
-                        margin-right: 40px;
-                        display: inline-flex;
-                        align-items: center;
-                        height: 41px;
-                    """
-                ),
-                style="margin-top: 20px;"
-            ),
-            class_="topbar",
-            style="margin-bottom: 1rem; padding: 8px 0; display: flex; justify-content: space-between; align-items: center;"
+            style="margin-top: 20px;"
         ),
+        class_="topbar",
+        style="margin-bottom: 1rem; padding: 8px 0; display: flex; justify-content: space-between; align-items: center;"
+    ),
 
-            # 전체 컨텐츠를 감싸는 컨테이너 추가
-            ui.div(
+        # 전체 컨텐츠를 감싸는 컨테이너 추가
+        ui.div(
             # ───────────────────────────────────────────────
             # 1) 단일 칼럼 제거
             # ───────────────────────────────────────────────
@@ -403,8 +402,6 @@ def panel_body():
             
             # 컨테이너 닫기 + 너비 제한 스타일
             style="max-width: 1400px; margin: 0 auto; padding: 0 24px;"
-        ),
-            class_="preprocessing-tab"
         ),
     )
 
