@@ -1,0 +1,215 @@
+데이터 전처리 요약
+<div class="topbar" style="margin-bottom: 1rem; padding: 8px 0; display: flex; justify-content: space-between; align-items: center;">
+  <div style="&#10;                background: white;&#10;                border: 1px solid #d1d5db;&#10;                border-radius: 24px;&#10;                padding: 14px 20px;&#10;                display: flex;&#10;                align-items: center;&#10;                flex: 1;&#10;                max-width: 400px;&#10;                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);&#10;                margin-left: 20px;&#10;                margin-top: 20px;&#10;            ">
+    <i class="fa-solid fa-magnifying-glass" style="color: #9ca3af; margin-right: 14px; font-size: 16px;"></i><span style="color: #6b7280; font-size: 15px; font-weight: 400;">데이터 전처리 요약</span>
+  </div>
+  <div style="margin-top: 20px;">
+    <a class="btn btn-default shiny-download-link disabled" id="download_pdf" href="" target="_blank" download="" aria-disabled="true" tabindex="-1" style="&#10;                    background: linear-gradient(135deg, #ec685f 0%, #eb6056 100%);&#10;                    color: white;&#10;                    border: none;&#10;                    padding: 10px 20px;&#10;                    font-size: 15px;&#10;                    font-weight: 600;&#10;                    border-radius: 20px;    &#10;                    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.2);&#10;                    transition: all 0.3s ease;&#10;                    cursor: pointer;&#10;                    margin-right: 40px;&#10;                    display: inline-flex;&#10;                    align-items: center;&#10;                    height: 41px;&#10;                "><i class="fa-solid fa-file-pdf"></i> PDF 다운로드</a>
+  </div>
+</div>
+<div style="max-width: 1400px; margin: 0 auto; padding: 0 24px;">
+  <div class="accordion-section">
+    <button onclick="toggleAccordion(&apos;drop_columns_content&apos;)" class="accordion-header">      <div style="display: flex; justify-content: space-between; width: 100%;">
+        <span style="font-size: 16px;">단일 칼럼 제거</span><span style="font-size: 12px;">▼</span>
+      </div></button>
+    <div id="drop_columns_content" class="accordion-content" style="display: none;">
+      <ul class="nav nav-tabs" data-tabsetid="475747">
+        <li class="nav-item">
+          <a data-bs-toggle="tab" data-toggle="tab" data-value="heating_furnace 열" role="tab" class="nav-link active" href="#tab-475747-0">heating_furnace 열</a>
+        </li>
+        <li class="nav-item">
+          <a data-bs-toggle="tab" data-toggle="tab" data-value="molten_volume 열" role="tab" class="nav-link" href="#tab-475747-1">molten_volume 열</a>
+        </li>
+        <li class="nav-item">
+          <a data-bs-toggle="tab" data-toggle="tab" data-value="upper/lower_mold_temp3 · registration_time열" role="tab" class="nav-link" href="#tab-475747-2">upper/lower_mold_temp3 · registration_time열</a>
+        </li>
+      </ul>
+      <div class="tab-content" data-tabsetid="475747">
+        <div class="tab-pane active" role="tabpanel" data-value="heating_furnace 열" id="tab-475747-0">
+          <div class="row">
+            <div class="col-sm-6 left-col">
+              <div style="display:flex; flex-direction:column; gap:.5rem;">
+                <img src="heating_furnace.png" style="width: 100%; height: 500px; object-fit: contain; margin-top: -50px;"/>
+                <div style="display: flex; align-items: center; margin-bottom: 8px; margin-top: -90px;">
+                  <i class="fa-solid fa-circle-xmark" style="color: #dc3545; margin-right: 8px;"></i><span style="font-weight: 700; color: #dc3545; font-size: 15px;">제거 이유</span>
+                </div>
+                <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 12px 16px; border-radius: 6px;">
+                  <span style="color: #495057; font-size: 14px;">결측이 매우 많고 기본 모델에서 변수 중요도 낮음 → 학습에서 제거</span>
+                </div>
+              </div>
+            </div>
+            <div class="col-sm-6 right-col">
+              <div style="margin:.25rem 0 0 0;">
+                <div style="margin-bottom: 12px; margin-top: 40px;">
+                  <span style="font-weight: 600; font-size: 16px; color: #2A2D30;">특정 인덱스 구간 확인하기</span><span style="font-weight: 400; font-size: 14px; color: #6c757d;"> (73406–73413)</span>
+                </div>
+                <img src="dataframe.png" style="width: 100%; object-fit: contain;"/>
+                <div>
+                                        <div style="margin-top: 16px;">
+                                          <button onclick="toggleHfDetail()" style="
+                                            background: #dc3545;
+                                            color: white;
+                                            border: none;
+                                            padding: 10px 20px;
+                                            font-size: 14px;
+                                            font-weight: 600;
+                                            border-radius: 6px;
+                                            cursor: pointer;
+                                            transition: all 0.3s ease;
+                                            display: flex;
+                                            align-items: center;
+                                            gap: 8px;
+                                          " onmouseover="this.style.background='#c82333'" onmouseout="this.style.background='#dc3545'">
+                                            제거 과정 상세히 보기
+                                            <span style="font-size: 16px;">▼</span>
+                                          </button>
+                                          <div id="hfDetailContent" style="display: none; background: #fff5f5; border-left: 4px solid #dc3545; padding: 12px 16px; border-radius: 6px; margin-top: 12px;">
+                                            <ul style="margin: 0; padding-left: 20px; color: #495057; font-size: 14px; line-height: 1.6;">
+                                              <li>결측이 아닌 구간: <code>mold_code</code> 일정, <code>date</code>/<code>count</code> 연속 → 동일 furnace 연속 생산으로 해석</li>
+                                              <li>결측 구간(예: index 73407, 73408): <code>mold_code</code> 8917/8722로 상이, <code>molten_volume</code> 61.0→84.0, <code>count</code> 222/219로 불연속 → 서로 다른 furnace로 보임</li>
+                                              <li>결론: 동일 <code>mold_code</code>이면서 <code>molten_volume</code>/<code>count</code>가 이어지면 하나의 furnace에서 연속 생산. 반대로 <strong>결측(NaN) 구간</strong>은 최소 2개 이상의 상이한 집단일 가능성이 큼</li>
+                                              <li>모델 관점: 변수 중요도도 높지 않아 최종적으로 <strong>heating_furnace 열 제외</strong></li>
+                                            </ul>
+                                          </div>
+                                        </div>
+                                        <script>
+                                        function toggleHfDetail() {
+                                          var content = document.getElementById('hfDetailContent');
+                                          if (content.style.display === 'none') {
+                                            content.style.display = 'block';
+                                          } else {
+                                            content.style.display = 'none';
+                                          }
+                                        }
+                                        </script>
+                                        </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tab-pane" role="tabpanel" data-value="molten_volume 열" id="tab-475747-1">
+          <div class="row">
+            <div class="col-sm-6 left-col">
+              <div style="display:flex; flex-direction:column; gap:.5rem;">
+                <img src="molten_volume.png" style="width: 100%; height: 500px; object-fit: contain;"/>
+                <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                  <i class="fa-solid fa-circle-xmark" style="color: #dc3545; margin-right: 8px;"></i><span style="font-weight: 700; color: #dc3545; font-size: 15px;">제거 이유</span>
+                </div>
+                <div style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 12px 16px; border-radius: 6px;">
+                  <span style="color: #495057; font-size: 14px;">결측이 매우 많고 기본 모델에서 변수 중요도 낮음 → 학습에서 제거</span>
+                </div>
+              </div>
+            </div>
+            <div class="col-sm-6 right-col">
+              <div style="margin:.25rem 0 0 0;">
+                <div style="margin-bottom: 12px; margin-top: 40px;">
+                  <span style="font-weight: 600; font-size: 16px; color: #2A2D30;">mold_code별 count - molten_volume 산점도</span>
+                </div>
+                <div id="mv_scatter_plot" class="shiny-image-output html-fill-item shiny-plot-output" style="width:100%;height:600px;"></div>
+                
+<ul>
+    <li>mold_code별로 나눠서 count에 따라 molten_volume 그래프를 그렸을 때 
+    count에 따라 molten_volume이 채워지고 다시 줄어드는 양상이 보임<br></li>
+    <li>그러나 결측치가 너무 많아서 정확한 값을 예측하기 어렵고 
+    기본 모델에서 변수 중요도도 높지 않아 최종적으로 <b>heating_furnace 열 제외</b></li>
+</ul>
+
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tab-pane" role="tabpanel" data-value="upper/lower_mold_temp3 · registration_time열" id="tab-475747-2">
+          <div class="row">
+            <div class="col-sm-6 left-col">
+              <div style="display:flex; flex-direction:column; gap:.5rem;">
+                <ul>
+<li>이상치 1449.0을 센서 오류 코드로 가정 → 두 칼럼 모두 제거</li>
+</ul>
+
+                <div id="mt3_hist" class="shiny-image-output html-fill-item shiny-plot-output" style="width:100%;height:420px;"></div>
+              </div>
+            </div>
+            <div class="col-sm-6 right-col">
+              <div style="display:flex; flex-direction:column; gap:.5rem;">
+                <ul>
+<li>registration_time: 'time'+'date' 결합 정보(중복 의미) → 제거</li>
+</ul>
+
+                <shiny-data-frame id="reg_head_df" class="html-fill-item html-fill-container"></shiny-data-frame>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="accordion-section">
+    <button onclick="toggleAccordion(&apos;row_removal_content&apos;)" class="accordion-header">      <div style="display: flex; justify-content: space-between; width: 100%;">
+        <span style="font-size: 16px;">행 제거</span><span style="font-size: 12px;">▼</span>
+      </div></button>
+    <div id="row_removal_content" class="accordion-content" style="display: none;">
+      <ul class="nav nav-tabs" data-tabsetid="733507">
+        <li class="nav-item">
+          <a data-bs-toggle="tab" data-toggle="tab" data-value="emergency_stop" role="tab" class="nav-link active" href="#tab-733507-0">emergency_stop</a>
+        </li>
+        <li class="nav-item">
+          <a data-bs-toggle="tab" data-toggle="tab" data-value="count 중복" role="tab" class="nav-link" href="#tab-733507-1">count 중복</a>
+        </li>
+      </ul>
+      <div class="tab-content" data-tabsetid="733507">
+        <div class="tab-pane active" role="tabpanel" data-value="emergency_stop" id="tab-733507-0">
+          <div style="display:flex; flex-direction:column; gap:.5rem;">
+            <ul>
+<li>emergency_stop이 결측인 경우 1번 존재, 이때 이 행의 나머지 칼럼들 대부분 결측 → 학습 데이터에서 행 제거</li>
+<li>모델 예측이 끝난 뒤, emergency_stop 값을 확인해서 결측인 경우 불량으로 나오도록 함</li>
+</ul>
+
+            <shiny-data-frame id="emergency_stop_df" class="html-fill-item html-fill-container"></shiny-data-frame>
+          </div>
+        </div>
+        <div class="tab-pane" role="tabpanel" data-value="count 중복" id="tab-733507-1">
+          <div style="display:flex; flex-direction:column; gap:.5rem;">
+            <ul>
+<li>count, mold_code, time, molten_volume 등이 겹치는 경우 다른 모든 변수들도 같은 값을 가짐</li>
+<li>정보 중복을 피하기 위해 하나만 남기고 나머지 중복 행들 삭제</li>
+</ul>
+
+            <div class="shiny-html-output" id="count_dup_ui"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="accordion-section">
+    <button onclick="toggleAccordion(&apos;missing_value_content&apos;)" class="accordion-header">      <div style="display: flex; justify-content: space-between; width: 100%;">
+        <span style="font-size: 16px;">결측치 처리</span><span style="font-size: 12px;">▼</span>
+      </div></button>
+    <div id="missing_value_content" class="accordion-content" style="display: block;">
+      <ul class="nav nav-tabs" data-tabsetid="948935">
+        <li class="nav-item">
+          <a data-bs-toggle="tab" data-toggle="tab" data-value="molten_temp 열" role="tab" class="nav-link active" href="#tab-948935-0">molten_temp 열</a>
+        </li>
+      </ul>
+      <div class="tab-content" data-tabsetid="948935">
+        <div class="tab-pane active" role="tabpanel" data-value="molten_temp 열" id="tab-948935-0">
+          <div style="display:flex; flex-direction:column; gap:.75rem;">
+            <ul>
+<li>molten_temp 결측이 연속되어 나오는 경우 거의 없음 → 앞뒤 행들과 이어지도록 두 행들의 평균으로 대치</li>
+<li>train 데이터에서는 이전 행과 다음 행의 molten_temp 값들의 평균으로 대치</li>
+<li>test 데이터에서는 바로 직전 행의 molten_temp 값으로 대치</li>
+</ul>
+
+            <div class="row">
+              <div class="col-sm-6 pe-2">
+                <div id="mt_na_runs_plot" class="shiny-image-output html-fill-item shiny-plot-output" style="width:100%;height:380px;"></div>
+              </div>
+              <div class="col-sm-6 ps-2">
+                <div id="mt_na_sample_plot" class="shiny-image-output html-fill-item shiny-plot-output" style="width:100%;height:580px;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

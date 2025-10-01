@@ -1,4 +1,4 @@
-from shiny import ui, render, reactive
+﻿from shiny import ui, render, reactive
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -18,7 +18,7 @@ NAV = getattr(ui, "nav", ui.nav_panel)
 # --- 경로 설정 ---
 BASE_DIR = Path(__file__).resolve().parents[2]
 APP_DIR = Path(__file__).resolve().parents[1]
-PDF_FILE  = BASE_DIR / "reports" / "preprocessing_report.pdf"
+PDF_FILE  = APP_DIR / "data" / "reports" / "preprocessing_report.pdf"
 DATA_FILE = BASE_DIR / "data" / "raw" / "train.csv"
 
 # ===== Matplotlib 한글 폰트 (실제 존재하는 폰트만 사용) =====
@@ -135,6 +135,13 @@ def panel_body():
             transform: translateY(0px);
         }
         
+        /* 테이블 헤더 색상 변경 */
+        .shiny-data-grid thead th,
+        .table thead th {
+            background-color: #56565b !important;
+            color: white !important;
+            border-color: #56565b !important;
+        }
         /* 접기 박스 */
         details.details-box { margin-top: .75rem; }
         details.details-box > summary { cursor: pointer; font-weight: 600; }
@@ -168,7 +175,7 @@ def panel_body():
             background-color: #1f2428;
         }
         .accordion-content { 
-            padding: 24px 28px; 
+            padding: 4px 8px; 
             background: #ffffff; 
             border-radius: 0 0 16px 16px;
         }
@@ -184,7 +191,6 @@ def panel_body():
             }
         """)
     )
-
     # 공통 레이아웃: 각 카드마다 탭 + (왼쪽 텍스트 / 오른쪽 시각화)
     def two_col(left, right):
         return ui.row(
@@ -193,28 +199,10 @@ def panel_body():
         )
 
     return ui.TagList(
-        "데이터 전처리 요약",
         css,
 
         # 상단 검색창 스타일 제목 + PDF 버튼
-        ui.div(
-        ui.div(
-            ui.HTML('<i class="fa-solid fa-magnifying-glass" style="color: #9ca3af; margin-right: 14px; font-size: 16px;"></i>'),
-            ui.span("데이터 전처리 요약", style="color: #6b7280; font-size: 15px; font-weight: 400;"),
-            style="""
-                background: white;
-                border: 1px solid #d1d5db;
-                border-radius: 24px;
-                padding: 14px 20px;
-                display: flex;
-                align-items: center;
-                flex: 1;
-                max-width: 400px;
-                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-                margin-left: 20px;
-                margin-top: 20px;
-            """
-        ),
+        # 상단 PDF 버튼
         ui.div(
             ui.download_button(
                 "download_pdf", 
@@ -230,18 +218,13 @@ def panel_body():
                     box-shadow: 0 4px 12px rgba(220, 53, 69, 0.2);
                     transition: all 0.3s ease;
                     cursor: pointer;
-                    margin-right: 40px;
                     display: inline-flex;
                     align-items: center;
                     height: 41px;
                 """
             ),
-            style="margin-top: 20px;"
+            style="display: flex; justify-content: flex-end; margin: -25px 40px 1rem 0; padding: 8px 0;"
         ),
-        class_="topbar",
-        style="margin-bottom: 1rem; padding: 8px 0; display: flex; justify-content: space-between; align-items: center;"
-    ),
-
         # 전체 컨텐츠를 감싸는 컨테이너 추가
         ui.div(
             # ───────────────────────────────────────────────
@@ -263,19 +246,67 @@ def panel_body():
                             "heating_furnace 열",
                             two_col(
                                 ui.div(
-                                     ui.img(src="heating_furnace.png", style="width: 100%; height: auto;"),
+                                    ui.img(src="heating_furnace.png", style="width: 100%; height: 500px; object-fit: contain; margin-top: -30px;"),
                                     ui.div(
                                         ui.HTML('<i class="fa-solid fa-circle-xmark" style="color: #dc3545; margin-right: 8px;"></i>'),
-                                        ui.span("제거 이유: ", style="font-weight: 700; color: #dc3545; font-size: 15px;"),
-                                        ui.span(DETAILS["drop_heating_furnace"], style="color: #495057; font-size: 14px;"),
-                                        style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 12px 16px; border-radius: 6px; margin-top: 12px; display: flex; align-items: flex-start;"
+                                        ui.span("제거 이유", style="font-weight: 700; color: #dc3545; font-size: 15px;"),
+                                        style="display: flex; align-items: center; margin-bottom: 8px; margin-top: -90px;"
+                                    ),
+                                    ui.div(
+                                        ui.span("결측이 매우 많고 기본 모델에서 변수 중요도 낮음 → 학습에서 제거", 
+                                               style="color: #495057; font-size: 14px; font-weight: 600;"),
+                                        style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 12px 16px; border-radius: 6px;"
                                     ),
                                     style="display:flex; flex-direction:column; gap:.5rem;"
                                 ),
                                 ui.div(
-                                    ui.h5("특정 인덱스 구간 확인하기 (73406–73413)"),
-                                    ui.output_ui("hf_slice_df"),
-                                    ui.HTML(EVIDENCE_DESC["drop_heating_furnace"]),
+                                    ui.div(
+                                        ui.span("특정 인덱스 구간 확인하기", style="font-weight: 600; font-size: 16px; color: #2A2D30;"),
+                                        ui.span(" (73406–73413)", style="font-weight: 400; font-size: 14px; color: #6c757d;"),
+                                        style="margin-bottom: 12px; margin-top: 40px;"
+                                    ),
+                                    ui.img(src="dataframe.png", style="width: 100%; object-fit: contain;"),
+                                    ui.div(
+                                        ui.HTML("""
+                                        <div style="margin-top: 16px;">
+                                          <button onclick="toggleHfDetail()" style="
+                                            background: #c0d7c8
+                                            color: white;
+                                            border: none;
+                                            padding: 10px 20px;
+                                            font-size: 14px;
+                                            font-weight: 600;
+                                            border-radius: 6px;
+                                            cursor: pointer;
+                                            transition: all 0.3s ease;
+                                            display: flex;
+                                            align-items: center;
+                                            gap: 8px;
+                                            "onmouseover="this.style.background='#5fa87a'" onmouseout="this.style.background='#71c091'">
+                                            제거 과정 상세히 보기
+                                            <span style="font-size: 16px;">▼</span>
+                                          </button>
+                                       <div id="hfDetailContent" style="display: none; background: #c0d7c8; border-left: 4px solid #839f8e; padding: 12px 16px; border-radius: 6px; margin-top: 12px;">
+                                          <ul style="margin: 0; padding-left: 20px; color: #2d3d34; font-size: 14px; line-height: 1.6;">
+                                            <li>결측이 아닌 구간: <code>mold_code</code> 일정, <code>date</code>/<code>count</code> 연속 → 동일 furnace 연속 생산으로 해석</li>
+                                            <li>결측 구간(예: index 73407, 73408): <code>mold_code</code> 8917/8722로 상이, <code>molten_volume</code> 61.0→84.0, <code>count</code> 222/219로 불연속 → 서로 다른 furnace로 보임</li>
+                                            <li>결론: 동일 <code>mold_code</code>이면서 <code>molten_volume</code>/<code>count</code>가 이어지면 하나의 furnace에서 연속 생산. 반대로 <strong>결측(NaN) 구간</strong>은 최소 2개 이상의 상이한 집단일 가능성이 큼</li>
+                                            <li>모델 관점: 변수 중요도도 높지 않아 최종적으로 <strong>heating_furnace 열 제외</strong></li>
+                                          </ul>
+                                        </div>
+                                        </div>
+                                        <script>
+                                        function toggleHfDetail() {
+                                          var content = document.getElementById('hfDetailContent');
+                                          if (content.style.display === 'none') {
+                                            content.style.display = 'block';
+                                          } else {
+                                            content.style.display = 'none';
+                                          }
+                                        }
+                                        </script>
+                                        """)
+                                    ),
                                     style="margin:.25rem 0 0 0;"
                                 ),
                             ),
@@ -284,14 +315,64 @@ def panel_body():
                             "molten_volume 열",
                             two_col(
                                 ui.div(
-                                    ui.markdown(DETAILS["drop_molten_volume"]),
-                                    ui.output_plot("mv_pie", width="100%", height="360px"),
+                                    ui.img(src="molten_volume.png", style="width: 100%; height: 500px; object-fit: contain;"),
+                                    ui.div(
+                                        ui.HTML('<i class="fa-solid fa-circle-xmark" style="color: #dc3545; margin-right: 8px;"></i>'),
+                                        ui.span("제거 이유", style="font-weight: 700; color: #dc3545; font-size: 15px;"),
+                                        style="display: flex; align-items: center; margin-bottom: 8px; margin-top: -30px;"
+                                    ),
+                                    ui.div(
+                                        ui.span("결측이 매우 많고 기본 모델에서 변수 중요도 낮음 → 학습에서 제거", 
+                                               style="color: #495057; font-size: 14px; font-weight: 600;"),
+                                        style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 12px 16px; border-radius: 6px;"
+                                    ),
                                     style="display:flex; flex-direction:column; gap:.5rem;"
                                 ),
                                 ui.div(
-                                    ui.h5("mold_code별 count - molten_volume 산점도"),
-                                    ui.output_plot("mv_scatter_plot", width="100%", height="600px"),
-                                    ui.HTML(EVIDENCE_DESC["drop_molten_volume"]),
+                                    ui.div(
+                                        ui.span("mold_code별 count - molten_volume 산점도", style="font-weight: 600; font-size: 16px; color: #2A2D30;"),
+                                        style="margin-bottom: 40px; margin-top: 10px;"
+                                    ),
+                                    ui.img(src="plotly.png", style="width: 100%; height: 450px; object-fit: contain; margin-top: -30px;"),
+                                    ui.div(
+                                        ui.HTML("""
+                                        <div style="margin-top: 16px;">
+                                          <button onclick="toggleMvDetail()" style="
+                                              background: #c0d7c8
+                                              color: white;
+                                              border: none;
+                                              padding: 10px 20px;
+                                              font-size: 14px;
+                                              font-weight: 600;
+                                              border-radius: 6px;
+                                              cursor: pointer;
+                                              transition: all 0.3s ease;
+                                              display: flex;
+                                              align-items: center;
+                                              gap: 8px;
+                                            " onmouseover="this.style.background='#5fa87a'" onmouseout="this.style.background='#71c091'">
+                                            제거 과정 상세히 보기
+                                            <span style="font-size: 16px;">▼</span>
+                                          </button>
+                                        <div id="mvDetailContent" style="display: none; background: #c0d7c8; border-left: 4px solid #839f8e; padding: 12px 16px; border-radius: 6px; margin-top: 12px;">
+                                          <ul style="margin: 0; padding-left: 20px; color: #2d3d34; font-size: 14px; line-height: 1.6;">
+                                            <li>mold_code별로 나눠서 count에 따라 molten_volume 그래프를 그렸을 때 count에 따라 molten_volume이 채워지고 다시 줄어드는 양상이 보임</li>
+                                            <li>그러나 결측치가 너무 많아서 정확한 값을 예측하기 어렵고 기본 모델에서 변수 중요도도 높지 않아 최종적으로 <strong>molten_volume 열 제외</strong></li>
+                                          </ul>
+                                        </div>
+                                        </div>
+                                        <script>
+                                        function toggleMvDetail() {
+                                          var content = document.getElementById('mvDetailContent');
+                                          if (content.style.display === 'none') {
+                                            content.style.display = 'block';
+                                          } else {
+                                            content.style.display = 'none';
+                                          }
+                                        }
+                                        </script>
+                                        """)
+                                    ),
                                     style="margin:.25rem 0 0 0;"
                                 ),
                             ),
@@ -300,25 +381,55 @@ def panel_body():
                             "upper/lower_mold_temp3 · registration_time열",
                             two_col(
                                 ui.div(
-                                    ui.markdown(DETAILS["drop_mold_temp3"]),
-                                    ui.output_plot("mt3_hist", width="100%", height="420px"),
+                                    ui.row(
+                                        ui.column(
+                                            6,
+                                            ui.img(src="upper_mold.png", style="width: 100%; height: 200px; object-fit: contain;"),
+                                        ),
+                                        ui.column(
+                                            6,
+                                            ui.img(src="lower_mold.png", style="width: 100%; height: 200px; object-fit: contain;"),
+                                        ),
+                                         style="margin-top: 40px;"
+                                    ),
+                                    ui.div(
+                                        ui.HTML('<i class="fa-solid fa-circle-xmark" style="color: #dc3545; margin-right: 8px;"></i>'),
+                                        ui.span("제거 이유", style="font-weight: 700; color: #dc3545; font-size: 15px;"),
+                                        style="display: flex; align-items: center; margin-bottom: 8px; margin-top: 35px;"
+                                    ),
+                                    ui.div(
+                                        ui.span("이상치 1449.0을 센서 오류 코드로 가정 → 두 칼럼 모두 제거", 
+                                               style="color: #495057; font-size: 14px; font-weight: 600;"),
+                                        style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 12px 16px; border-radius: 6px;"
+                                    ),
                                     style="display:flex; flex-direction:column; gap:.5rem;"
                                 ),
                                 ui.div(
-                                    ui.markdown(DETAILS["drop_etc"]),
-                                    ui.output_data_frame("reg_head_df"),
-                                    style="display:flex; flex-direction:column; gap:.5rem;"
+                                    ui.div(
+                                        ui.output_data_frame("reg_head_df"),
+                                        style="display: flex; justify-content: center;"
+                                    ),
+                                    ui.div(
+                                        ui.HTML('<i class="fa-solid fa-circle-xmark" style="color: #dc3545; margin-right: 8px;"></i>'),
+                                        ui.span("제거 이유", style="font-weight: 700; color: #dc3545; font-size: 15px;"),
+                                        style="display: flex; align-items: center; margin-bottom: 8px; margin-top: 12px;"
+                                    ),
+                                    ui.div(
+                                        ui.span("registration_time: 'time'+'date' 결합 정보(중복 의미) → 제거", 
+                                               style="color: #495057; font-size: 14px; font-weight: 600;"),
+                                        style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 12px 16px; border-radius: 6px;"
+                                    ),
+                                    style="display:flex; flex-direction:column; gap:.5rem; margin-top: 70px;"
                                 ),
                             ),
                         ),
                     ),
                     id="drop_columns_content",
                     class_="accordion-content",
-                    style="display: none;"
+                    style="display: block;"
                 ),
                 class_="accordion-section"
             ),
-        
             # ───────────────────────────────────────────────
             # 2) 행 제거
             # ───────────────────────────────────────────────
@@ -337,23 +448,49 @@ def panel_body():
                         NAV(
                             "emergency_stop",
                             ui.div(
-                                ui.markdown(DETAILS["row_emergency_stop"]),
-                                ui.output_data_frame("emergency_stop_df"),
-                                style="display:flex; flex-direction:column; gap:.5rem;"
+                                ui.output_ui("emergency_stop_df"),
+                                ui.div(
+                                    ui.HTML('<i class="fa-solid fa-circle-xmark" style="color: #dc3545; margin-right: 8px;"></i>'),
+                                    ui.span("제거 이유", style="font-weight: 700; color: #dc3545; font-size: 15px;"),
+                                    style="display: flex; align-items: center; margin-bottom: 2px; margin-top: 8px;"
+                                ),
+                                ui.div(
+                                    ui.HTML("""
+                                        <ul style="margin: 0; padding-left: 20px; color: #495057; font-size: 14px; line-height: 1.6; font-weight: 600;">
+                                            <li>emergency_stop이 결측인 경우 1번 존재, 이때 이 행의 나머지 칼럼들 대부분 결측 → 학습 데이터에서 행 제거</li>
+                                            <li>모델 예측이 끝난 뒤, emergency_stop 값을 확인해서 결측인 경우 불량으로 나오도록 함</li>
+                                        </ul>
+                                    """),
+                                    style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 12px 16px; border-radius: 6px;"
+                                ),
+                                style="display:flex; flex-direction:column; gap:.5rem; margin-top: 30px;"
                             ),
                         ),
                         NAV(
                             "count 중복",
                             ui.div(
-                                ui.markdown(DETAILS["row_count_dup"]),
                                 ui.output_ui("count_dup_ui"),
-                                style="display:flex; flex-direction:column; gap:.5rem;"
+                                ui.div(
+                                    ui.HTML('<i class="fa-solid fa-circle-xmark" style="color: #dc3545; margin-right: 8px;"></i>'),
+                                    ui.span("제거 이유", style="font-weight: 700; color: #dc3545; font-size: 15px;"),
+                                    style="display: flex; align-items: center; margin-bottom: 4px; margin-top: 16px;"
+                                ),
+                                ui.div(
+                                    ui.HTML("""
+                                        <ul style="margin: 0; padding-left: 20px; color: #495057; font-size: 14px; line-height: 1.6; font-weight: 600;">
+                                            <li>count, mold_code, time, molten_volume 등이 겹치는 경우 다른 모든 변수들도 같은 값을 가짐</li>
+                                            <li>정보 중복을 피하기 위해 하나만 남기고 나머지 중복 행들 삭제</li>
+                                        </ul>
+                                    """),
+                                    style="background: #fff5f5; border-left: 4px solid #dc3545; padding: 12px 16px; border-radius: 6px;"
+                                ),
+                                style="display:flex; flex-direction:column; gap:.5rem; margin-top: 20px;"
                             ),
                         ),
                     ),
                     id="row_removal_content",
                     class_="accordion-content",
-                    style="display: none;"
+                    style="display: block;"
                 ),
                 class_="accordion-section"
             ),
@@ -373,35 +510,51 @@ def panel_body():
                 ),
                 ui.div(
                     ui.navset_tab(
-                        NAV(
-                            "molten_temp 열",
-                            ui.div(
-                                ui.markdown(DETAILS["impute_molten_temp"]),
-                                ui.row(
-                                    ui.column(
-                                        6,
-                                        ui.output_plot("mt_na_runs_plot", width="100%", height="380px"),
-                                        class_="pe-2"
-                                    ),
-                                    ui.column(
-                                        6,
-                                        ui.output_plot("mt_na_sample_plot", width="100%", height="580px"),
-                                        class_="ps-2"
-                                    )
+                    NAV(
+                        "molten_temp 열",
+                        ui.div(
+                            ui.row(
+                                ui.column(
+                                    4,
+                                    ui.img(src="molten_temp.png", style="width: 100%; height: 500px; object-fit: contain; margin-top: -50px;"),
                                 ),
-                                style="display:flex; flex-direction:column; gap:.75rem;"
+                                ui.column(
+                                    4,
+                                    ui.img(src="train.png", style="width: 100%; height: 500px; object-fit: contain; margin-top: -70px;"),
+                                ),
+                                ui.column(
+                                    4,
+                                    ui.img(src="test.png", style="width: 100%; height: 500px; object-fit: contain; margin-top: -65px;"),
+                                )
                             ),
+                            ui.div(
+                                ui.HTML('<i class="fa-solid fa-circle-info" style="color: #0d6efd; margin-right: 8px;"></i>'),
+                                ui.span("결측치 처리 방법", style="font-weight: 700; color: #0d6efd; font-size: 15px;"),
+                                style="display: flex; align-items: center; margin-bottom: 4px; margin-top: -70px;"
+                            ),
+                            ui.div(
+                                ui.HTML("""
+                                    <ul style="margin: 0; padding-left: 20px; color: #495057; font-size: 14px; line-height: 1.6; font-weight: 600;">
+                                        <li>molten_temp 결측이 연속되어 나오는 경우 거의 없음 → 앞뒤 행들과 이어지도록 두 행들의 평균으로 대치</li>
+                                        <li>train 데이터에서는 이전 행과 다음 행의 molten_temp 값들의 평균으로 대치</li>
+                                        <li>test 데이터에서는 바로 직전 행의 molten_temp 값으로 대치</li>
+                                    </ul>
+                                """),
+                                style="background: #e7f3ff; border-left: 4px solid #0d6efd; padding: 12px 16px; border-radius: 6px;"
+                            ),
+                            style="display:flex; flex-direction:column; margin-top: 20px;"
                         ),
                     ),
+                ),
                     id="missing_value_content",
                     class_="accordion-content",
-                    style="display: block;"
+                    style="display: none;"
                 ),
                 class_="accordion-section"
             ),
             
             # 컨테이너 닫기 + 너비 제한 스타일
-            style="max-width: 1400px; margin: 0 auto; padding: 0 24px;"
+            style="max-width: 1400px; margin: 0 auto; padding: 0 24px; margin-top: -15px;"
         ),
     )
 
@@ -453,125 +606,6 @@ def server(input, output, session):
         return df.dropna(subset=["molten_volume", "count", "mold_code"])
 
 
-    
-    # --- heating_furnace: 특정 인덱스 구간(73406–73413) + 그룹 색상 표시 ---
-    @output
-    @render.ui
-    def hf_slice_df():
-        df = _raw_df()
-        required = ["heating_furnace", "mold_code", "time", "date", "molten_volume", "count"]
-        if not set(required).issubset(df.columns) or df.empty:
-            return ui.HTML("<div class='text-muted'>표시할 데이터가 없습니다.</div>")
-
-        # 73406~73413 범위(없으면 앞 8행)
-        start, end = 73406, 73413
-        if df.index.min() <= start and df.index.max() >= end:
-            subset = df.loc[start:end, required].copy()
-        else:
-            subset = df.loc[:, required].head(8).copy()
-
-        # ---- 유틸: 안전 정규화/표시/이스케이프 ----
-        def norm(x):
-            # 비교용(색결정): 결측 -> "", 그 외 strip한 문자열
-            if pd.isna(x):
-                return ""
-            s = str(x).strip()
-            return "" if s in ("<NA>", "None") else s
-
-        def show_text(x):
-            # 화면표시용: 결측/빈문자/특수표현 -> "Nan"
-            if pd.isna(x):
-                return "Nan"
-            s = str(x).strip()
-            return "Nan" if s in ("", "<NA>", "None", "nan", "NaN") else s
-
-        def esc(s):
-            return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-        # 색 규칙
-        def row_color(hf, mold):
-            h = norm(hf)
-            m = norm(mold)
-            if h.upper() == "B":
-                return "#e6f4ea"   # 연한 녹색
-            if (h.lower() in ("nan", "")) and m == "8917":
-                return "#fff7cc"   # 연한 노랑
-            if (h.lower() in ("nan", "")) and m == "8722":
-                return "#e7f3ff"   # 연한 하늘
-            return "#ffffff"
-
-        cols = ["index","heating_furnace","mold_code","time","date","molten_volume","count"]
-        thead = "<thead><tr>" + "".join(f"<th>{c}</th>" for c in cols) + "</tr></thead>"
-
-        body_rows = []
-        for idx, row in subset.iterrows():
-            bg = row_color(row.get("heating_furnace"), row.get("mold_code"))
-            cells = []
-            for c in cols:
-                val = idx if c == "index" else row.get(c)
-                txt = esc(show_text(val))
-                cells.append(f"<td style='background-color:{bg} !important;'>{txt}</td>")
-            body_rows.append(f"<tr>{''.join(cells)}</tr>")
-
-        table_html = f"""
-        <div style="max-height:420px; overflow:auto; border:1px solid #eee; border-radius:6px;">
-          <table class="table table-sm" style="width:100%; border-collapse:collapse;">
-            {thead}
-            <tbody>{''.join(body_rows)}</tbody>
-          </table>
-        </div>
-        <div class="text-muted" style="font-size:.9rem; margin-top:.35rem;">
-          <span style="background:#e6f4ea; padding:0 .35rem; border-radius:.25rem;">B 그룹</span>
-          <span style="background:#fff7cc; padding:0 .35rem; border-radius:.25rem; margin-left:.35rem;">NaN &amp; mold=8917</span>
-          <span style="background:#e7f3ff; padding:0 .35rem; border-radius:.25rem; margin-left:.35rem;">NaN &amp; mold=8722</span>
-        </div>
-        """
-        return ui.HTML(table_html)
-
-
-
-
-
-    # ── (단일 칼럼) molten_volume: 결측 vs 비결측 도넛 차트 ─────────────────────
-    @output
-    @render.plot
-    def mv_pie():
-        df = _raw_df()
-        if "molten_volume" not in df.columns or df.empty:
-            fig = plt.figure(figsize=(3, 2))
-            plt.text(0.5, 0.5, "molten_volume 칼럼이 없거나 데이터가 비어있습니다.",
-                     ha="center", va="center")
-            plt.axis("off")
-            return fig
-    
-        # 문자열로 통일 후 공백 제거
-        s = df["molten_volume"].astype("string").str.strip()
-    
-        # 결측 판단: NaN + 빈문자 + 'nan'/'none' (대소문자 무시)
-        miss_mask = s.isna() | s.eq("") | s.str.lower().isin(["nan", "none"])
-        n_miss = int(miss_mask.sum())
-        n_ok   = int((~miss_mask).sum())
-    
-        labels = ["결측", "비결측"]
-        sizes  = [n_miss, n_ok]
-        colors = ["#e15759", "#4c78a8"]
-    
-        fig, ax = plt.subplots(figsize=(9, 4.2))
-        # 반환값 언팩하지 않으면 버전 차이에도 안전
-        ax.pie(
-            sizes,
-            labels=labels,
-            colors=colors,
-            startangle=90,
-            counterclock=False,
-            wedgeprops=dict(width=0.38, edgecolor="white"),  # 도넛 형태
-            pctdistance=0.80,
-            textprops={"fontsize": 12},
-            autopct=lambda p: f"{p:.1f}%\n({int(round(p/100*sum(sizes))):,})",
-        )
-        ax.set_title("molten_volume 결측/비결측 비율", pad=8)
-        ax.axis("equal")
-        return fig
     
     # ── (단일 칼럼) molten_volume 상세 설명: mold_code별 count & molten_volume 산점도 ─────────────────────
     @output
@@ -655,20 +689,19 @@ def server(input, output, session):
         for i, c in enumerate(cols):
             ax = axes[i]
             s_all  = df[c].dropna()
-            s_plot = s_all[(s_all >= 0) & (s_all <= 1500)]
-            ax.hist(s_plot, bins=120, color="#4c78a8", alpha=0.85, edgecolor="white")
+            s_plot = s_all[(s_all >= 800) & (s_all <= 1500)]  # 800부터 시작
+            ax.hist(s_plot, bins=100, color="#4c78a8", alpha=0.85, edgecolor="white")  # bins도 조정
             ax.axvline(1449.0, color="red", linestyle="--", linewidth=1.8)
             cnt_1449 = int((s_all == 1449.0).sum())
-            ax.set_xlim(0, 1500)
+            ax.set_xlim(800, 1500)  # x축 범위를 800~1500으로 변경
             ax.set_xlabel("Temperature")
             ax.set_ylabel("Count")
-            ax.set_title(f"{name_map[c]} — n={len(s_plot):,} (x≤1500), 1449.0 개수={cnt_1449:,}")
+            ax.set_title(f"{name_map[c]} — n={len(s_plot):,} (800≤x≤1500), 1449.0 개수={cnt_1449:,}")
             ymax = ax.get_ylim()[1]
             ax.text(1449.0, ymax * 0.9, f"{cnt_1449:,}", color="red",
                     ha="left", va="center", fontsize=10, rotation=90)
 
         return fig
-
     # ── (단일 칼럼) registration/time/date 5행 미리보기 ────────────────────────
     @output
     @render.data_frame
@@ -692,18 +725,18 @@ def server(input, output, session):
     
     # --- emergency_stop 결측(비상정지) 행 표출 ---
     @output
-    @render.data_frame
+    @render.ui
     def emergency_stop_df():
         df = _raw_df()
         if "emergency_stop" not in df.columns:
-            return pd.DataFrame()
+            return ui.HTML("<div class='text-muted'>표시할 데이터가 없습니다.</div>")
 
         # 1) 비상정지: emergency_stop이 결측/빈문자/'nan'/'none' 인 행
         s = df["emergency_stop"].astype("string").str.strip()
         mask_emergency = s.isna() | s.eq("") | s.str.lower().isin(["nan", "none"])
         out = df[mask_emergency].copy()
 
-        # 2) 보여줄 칼럼(요청하신 순서)
+        # 2) 보여줄 칼럼
         desired_cols = [
             "id", "time", "date", "count", "working", "emergency_stop",
             "facility_operation_cycleTime", "production_cycletime",
@@ -715,19 +748,46 @@ def server(input, output, session):
             "EMS_operation_time", "tryshot_siganl", "heating_furnace",
         ]
 
-        # 3) 없는 칼럼은 생성해서 결측으로 채운 뒤, 순서 정렬
+        # 3) 없는 칼럼은 생성
         for c in desired_cols:
             if c not in out.columns:
                 out[c] = pd.NA
         out = out[desired_cols]
 
-        # 4) 표시용으로 결측을 "Nan" 문자열로 통일
-        #    (숫자/문자 구분 없이 모두 문자열로 보여주고, 결측은 Nan으로 표기)
-        for c in out.columns:
-            out[c] = out[c].astype(str)
-        out = out.replace({pd.NA: "Nan", "None": "Nan", "nan": "Nan", "NaN": "Nan", "": "Nan"}).fillna("Nan")
+        # 4) 표시용 포맷
+        def show_text(x):
+            if pd.isna(x): return "Nan"
+            s = str(x).strip()
+            return "Nan" if s in ("", "<NA>", "None", "nan", "NaN") else s
 
-        return out
+        def esc(s):
+            return s.replace("&","&amp;").replace("<", "&lt;").replace(">","&gt;")
+
+        # HTML 테이블 생성
+        thead = "<thead><tr>" + "".join(f"<th>{c}</th>" for c in desired_cols) + "</tr></thead>"
+
+        rows = []
+        for idx, row in out.iterrows():
+            tds = []
+            for c in desired_cols:
+                val = row.get(c)
+                txt = esc(show_text(val))
+                # emergency_stop 컬럼이고 값이 "Nan"이면 핑크색 배경
+                if c == "emergency_stop" and txt == "Nan":
+                    tds.append(f"<td style='background-color:#c0d7c8 !important;'>{txt}</td>")
+                else:
+                    tds.append(f"<td>{txt}</td>")
+            rows.append(f"<tr>{''.join(tds)}</tr>")
+
+        html = f"""
+        <div style="max-height:420px; overflow:auto; border:1px solid #eee; border-radius:6px;">
+          <table class="table table-sm" style="width:100%; border-collapse:collapse;">
+            {thead}
+            <tbody>{''.join(rows)}</tbody>
+          </table>
+        </div>
+        """
+        return ui.HTML(html)
     
     # --- count 중복 - count==32 & mold_code==8412 예시 표출 ---
     @output
@@ -760,49 +820,49 @@ def server(input, output, session):
         need = {"count", "mold_code", "time"}
         if (not need.issubset(df.columns)) or df.empty:
             return ui.HTML("<div class='text-muted'>표시할 데이터가 없습니다.</div>")
-
+    
         # 안전 비교(NA 무해화)
         cnt  = pd.to_numeric(df["count"], errors="coerce")
         mold = df["mold_code"].astype("string").str.strip()
         time = df["time"].astype("string").str.strip()
-
+    
         mask = cnt.eq(32) & mold.eq("8412").fillna(False) & time.eq("2019-01-07").fillna(False)
         out = df[mask].copy()
-
+    
         # 숨길 칼럼 제거
         drop_cols = [c for c in ["line", "name", "mold_name"] if c in out.columns]
         if drop_cols:
             out = out.drop(columns=drop_cols)
-
+    
         if out.empty:
             return ui.HTML("<div class='text-muted'>조건(count=32, mold_code=8412, time=2019-01-07)에 맞는 행이 없습니다.</div>")
-
+    
         # index==2953을 최상단으로 이동(있을 때만)
         if 2953 in out.index:
             out = pd.concat([out.loc[[2953]], out.drop(index=2953)], axis=0)
-
+    
         # 표시용 포맷터
         def show_text(x):
             if pd.isna(x): return "Nan"
             s = str(x).strip()
             return "Nan" if s in ("", "<NA>", "None", "nan", "NaN") else s
-
+    
         def esc(s):
             return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
-
+    
         # HTML 테이블 만들기(2953만 하이라이트)
         cols = ["index"] + list(out.columns)
         thead = "<thead><tr>" + "".join(f"<th>{c}</th>" for c in cols) + "</tr></thead>"
-
+    
         rows = []
         for idx, row in out.iterrows():
-            bg = "#fff7cc" if idx == 2953 else "#ffffff"   # ← 연한 노란색
+            bg = "#c0d7c8" if idx == 2953 else "#ffffff"   # ← 노란색에서 연한 핑크로 변경
             tds = []
             for c in cols:
                 val = idx if c == "index" else row.get(c)
                 tds.append(f"<td style='background-color:{bg} !important;'>{esc(show_text(val))}</td>")
             rows.append(f"<tr>{''.join(tds)}</tr>")
-
+    
         html = f"""
         <div style="max-height:420px; overflow:auto; border:1px solid #eee; border-radius:6px;">
           <table class="table table-sm" style="width:100%; border-collapse:collapse;">
