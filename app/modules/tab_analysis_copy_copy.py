@@ -7,14 +7,14 @@ import shap
 import matplotlib.pyplot as plt
 
 # --- 경로 및 자원 로드 ---
-BASE_DIR = Path(__file__).resolve().parents[2]
+BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_FILE = BASE_DIR / "data" / "processed" / "test_v1.csv"
 MODEL_FILE = BASE_DIR / "data" / "models" / "v1" / "LightGBM_v1.pkl"
 
 df = pd.read_csv(DATA_FILE, encoding="utf-8", low_memory=False)
 artifact = joblib.load(MODEL_FILE)
 
-model = artifact["model"]
+lgb_model = artifact["model"]
 scaler = artifact.get("scaler")
 ordinal_encoder = artifact.get("ordinal_encoder")
 onehot_encoder = artifact.get("onehot_encoder")
@@ -28,9 +28,18 @@ missing_columns = [col for col in all_model_cols if col not in df.columns]
 for col in missing_columns:
     df[col] = np.nan
 
-numeric_cols = numeric_cols_model
-categorical_cols = categorical_cols_model
-all_cols = all_model_cols
+numeric_cols = list(numeric_cols_model)
+categorical_cols = list(categorical_cols_model)
+all_cols = list(all_model_cols)
+
+FORCED_CATEGORICAL_COLS = {'mold_code', 'EMS_operation_time'}
+
+categorical_cols_ui = list(categorical_cols)
+for col in FORCED_CATEGORICAL_COLS:
+    if col in all_cols and col not in categorical_cols_ui:
+        categorical_cols_ui.append(col)
+
+numeric_cols_ui = [col for col in numeric_cols if col not in FORCED_CATEGORICAL_COLS]
 
 COLUMN_NAMES_KR = {
     "registration_time": "등록 일시",
@@ -57,7 +66,9 @@ COLUMN_NAMES_KR = {
     "uniformity": "균일도",
     "mold_temp_udiff": "금형 온도차(상/하)",
     "P_diff": "압력 차이",
-    "Cycle_diff": "사이클 시간 차이"
+    "Cycle_diff": "사이클 시간 차이",
+    "hour":"시간",
+    "weekday":"일자"
 }
 pass_reference = df[df.get("passorfail", 0) == 0].copy()
 if pass_reference.empty:
@@ -65,14 +76,17 @@ if pass_reference.empty:
 
 
 NUMERIC_FEATURE_RANGES = {}
-for col in numeric_cols:
+for col in numeric_cols_ui:
     series = pass_reference[col].dropna()
     if series.empty:
         series = df[col].dropna()
     if not series.empty:
         NUMERIC_FEATURE_RANGES[col] = (float(series.min()), float(series.max()))
+MIN_RECOMMENDATION_SPAN_RATIO = 0.15
+MIN_RECOMMENDATION_SPAN_ABS = 1.0
 
-explainer = shap.TreeExplainer(model)
+
+explainer = shap.TreeExplainer(lgb_model)
 
 def _resolve_expected_value(expected):
     if isinstance(expected, (list, tuple, np.ndarray)):
@@ -105,6 +119,140 @@ else:
     for feat in categorical_cols:
         ohe_feature_slices[feat] = (len(numeric_cols), len(numeric_cols))
         ohe_value_labels[feat] = []
+
+def _aggregate_shap_vector(shap_vector):
+    contributions = {}
+    for feat, idx in numeric_index_map.items():
+        contributions[feat] = float(shap_vector[idx])
+    for feat, (start, end) in ohe_feature_slices.items():
+        if end > start:
+            contributions[feat] = float(np.sum(shap_vector[start:end]))
+        else:
+            contributions[feat] = 0.0
+    return contributions
+
+
+def compute_shap_summary_data(features, reference_df=None, max_samples=400):
+    if not features:
+        return None
+    source_df = reference_df
+    if source_df is None or source_df.empty:
+        source_df = pass_reference if not pass_reference.empty else df
+    if source_df.empty:
+        return None
+    if len(source_df) > max_samples:
+        sample_df = source_df.sample(n=max_samples, random_state=42).copy()
+    else:
+        sample_df = source_df.copy()
+    if sample_df.empty:
+        return None
+    working_df = sample_df[all_cols].copy() if all_cols else sample_df.copy()
+    if numeric_cols:
+        working_df[numeric_cols] = working_df[numeric_cols].apply(pd.to_numeric, errors="coerce")
+    if categorical_cols:
+        working_df[categorical_cols] = working_df[categorical_cols].fillna("unknown").astype(str)
+    feature_matrix = prepare_feature_matrix(working_df)
+    shap_values_raw = explainer.shap_values(feature_matrix)
+    if isinstance(shap_values_raw, list):
+        shap_matrix = shap_values_raw[1] if len(shap_values_raw) > 1 else shap_values_raw[0]
+    else:
+        shap_matrix = shap_values_raw
+    if shap_matrix is None or len(shap_matrix) == 0:
+        return None
+    shap_matrix = np.asarray(shap_matrix)
+    aggregated = {feat: [] for feat in features}
+    for shap_vector in shap_matrix:
+        agg = _aggregate_shap_vector(shap_vector)
+        for feat in features:
+            aggregated[feat].append(float(agg.get(feat, 0.0)))
+    values_map = {}
+    for feat in features:
+        if feat in sample_df.columns:
+            values_map[feat] = sample_df[feat].tolist()
+        else:
+            values_map[feat] = [np.nan] * len(sample_df)
+    return {"shap": aggregated, "values": values_map, "count": len(sample_df)}
+
+def compute_feature_distribution_data(features, max_samples=400):
+    if not features:
+        return None
+    if "passorfail" in df.columns:
+        pass_df = pass_reference if not pass_reference.empty else df[df.get("passorfail") == 0]
+        fail_df = df[df.get("passorfail") == 1]
+    else:
+        pass_df = pass_reference if not pass_reference.empty else df
+        fail_df = df[df.index.isin([])]
+    if pass_df is None or pass_df.empty:
+        pass_df = df
+    def _take_sample(source):
+        if source is None or source.empty:
+            return source
+        if len(source) > max_samples:
+            return source.sample(n=max_samples, random_state=42)
+        return source
+    pass_sample = _take_sample(pass_df)
+    fail_sample = _take_sample(fail_df)
+    result = {}
+    for feat in features:
+        if feat not in df.columns:
+            continue
+        feature_type = "numeric" if feat in numeric_cols else ("categorical" if feat in categorical_cols else "unknown")
+        entry = {"type": feature_type}
+        if feature_type == "numeric":
+            pass_vals = pd.to_numeric(pass_sample.get(feat), errors="coerce") if pass_sample is not None else pd.Series(dtype=float)
+            fail_vals = pd.to_numeric(fail_sample.get(feat), errors="coerce") if fail_sample is not None else pd.Series(dtype=float)
+            entry["pass"] = pass_vals.dropna().tolist() if pass_vals is not None else []
+            entry["fail"] = fail_vals.dropna().tolist() if fail_vals is not None else []
+        else:
+            pass_vals = pass_sample.get(feat) if pass_sample is not None else pd.Series(dtype=object)
+            fail_vals = fail_sample.get(feat) if fail_sample is not None else pd.Series(dtype=object)
+            pass_list = pass_vals.fillna("missing").astype(str).tolist() if pass_vals is not None else []
+            fail_list = fail_vals.fillna("missing").astype(str).tolist() if fail_vals is not None else []
+            entry["pass"] = pass_list
+            entry["fail"] = fail_list
+        result[feat] = entry
+    return result
+
+    if not features:
+        return None
+    source_df = reference_df
+    if source_df is None or source_df.empty:
+        source_df = pass_reference if not pass_reference.empty else df
+    if source_df.empty:
+        return None
+    if len(source_df) > max_samples:
+        sample_df = source_df.sample(n=max_samples, random_state=42).copy()
+    else:
+        sample_df = source_df.copy()
+    if sample_df.empty:
+        return None
+    working_df = sample_df[all_cols].copy() if all_cols else sample_df.copy()
+    if numeric_cols:
+        working_df[numeric_cols] = working_df[numeric_cols].apply(pd.to_numeric, errors="coerce")
+    if categorical_cols:
+        working_df[categorical_cols] = working_df[categorical_cols].fillna("unknown").astype(str)
+    feature_matrix = prepare_feature_matrix(working_df)
+    shap_values_raw = explainer.shap_values(feature_matrix)
+    if isinstance(shap_values_raw, list):
+        shap_matrix = shap_values_raw[1] if len(shap_values_raw) > 1 else shap_values_raw[0]
+    else:
+        shap_matrix = shap_values_raw
+    if shap_matrix is None or len(shap_matrix) == 0:
+        return None
+    shap_matrix = np.asarray(shap_matrix)
+    aggregated = {feat: [] for feat in features}
+    for shap_vector in shap_matrix:
+        agg = _aggregate_shap_vector(shap_vector)
+        for feat in features:
+            aggregated[feat].append(float(agg.get(feat, 0.0)))
+    values_map = {}
+    for feat in features:
+        if feat in sample_df.columns:
+            values_map[feat] = sample_df[feat].tolist()
+        else:
+            values_map[feat] = [np.nan] * len(sample_df)
+    return {"shap": aggregated, "values": values_map, "count": len(sample_df)}
+
 
 def build_input_dataframe(row_dict):
     data = {col: row_dict.get(col) for col in all_cols}
@@ -142,24 +290,17 @@ def compute_shap_contributions(feature_matrix):
     if isinstance(shap_values, list):
         shap_values = shap_values[1] if len(shap_values) > 1 else shap_values[0]
     shap_vector = shap_values[0]
-    contributions = {}
-    for feat, idx in numeric_index_map.items():
-        contributions[feat] = float(shap_vector[idx])
-    for feat, (start, end) in ohe_feature_slices.items():
-        if end > start:
-            contributions[feat] = float(np.sum(shap_vector[start:end]))
-        else:
-            contributions[feat] = 0.0
+    contributions = _aggregate_shap_vector(shap_vector)
     return contributions, shap_vector
 
 def predict_with_model(row_dict, compute_shap=False):
     input_df = build_input_dataframe(row_dict)
     feature_matrix = prepare_feature_matrix(input_df)
-    if hasattr(model, "predict_proba"):
-        proba = model.predict_proba(feature_matrix)
+    if hasattr(lgb_model, "predict_proba"):
+        proba = lgb_model.predict_proba(feature_matrix)
         probability = float(proba[0, 1] if proba.ndim == 2 else proba[0])
     else:
-        raw_pred = model.predict(feature_matrix)
+        raw_pred = lgb_model.predict(feature_matrix)
         probability = float(raw_pred[0] if raw_pred.ndim else raw_pred)
     prediction = 1 if probability >= operating_threshold else 0
     forced_fail = False
@@ -213,7 +354,7 @@ def evaluate_prediction(row_dict):
     return result["prediction"], result["probability"]
 
 
-def find_normal_range_binary_fixed(base_row, feature, bounds, threshold=operating_threshold, tol_ratio=0.01, max_iter=20, n_check=5):
+def find_normal_range_binary_fixed(base_row, feature, bounds, threshold=operating_threshold, tol_ratio=0.01, max_iter=20, n_check=5, min_span_ratio=0.1, min_span_absolute=1.0):
     if not bounds:
         return None
     f_min, f_max = bounds
@@ -222,6 +363,8 @@ def find_normal_range_binary_fixed(base_row, feature, bounds, threshold=operatin
     low, high = float(f_min), float(f_max)
     if not np.isfinite(low) or not np.isfinite(high) or low >= high:
         return None
+    orig_low, orig_high = low, high
+    orig_span = orig_high - orig_low
     tol = max((high - low) * tol_ratio, 1e-3)
     best_details = None
     for _ in range(max_iter):
@@ -251,16 +394,24 @@ def find_normal_range_binary_fixed(base_row, feature, bounds, threshold=operatin
     if best_details is None:
         return None
     low, high, examples, best_prob = best_details
+    min_span = max(orig_span * min_span_ratio, min_span_absolute)
+    if (high - low) < min_span:
+        center = (high + low) / 2.0
+        low = max(orig_low, center - min_span / 2.0)
+        high = min(orig_high, center + min_span / 2.0)
+    examples = list({float(v) for v in (examples + [low, high])})
+    examples.sort()
     return {
         "min": float(low),
         "max": float(high),
-        "examples": [float(v) for v in examples],
+        "examples": examples[:3],
         "best_prob": float(best_prob)
     }
 
 
-def binary_search_normal_ranges(base_row, features, feature_ranges, threshold=operating_threshold, max_iter=10, tol_ratio=0.01):
+def binary_search_normal_ranges(base_row, features, feature_ranges, threshold=operating_threshold, max_iter=10, tol_ratio=0.01, min_span_ratio=0.1, min_span_absolute=1.0):
     usable = {}
+    base_ranges = {}
     for feat in features:
         bounds = feature_ranges.get(feat)
         if not bounds:
@@ -270,7 +421,9 @@ def binary_search_normal_ranges(base_row, features, feature_ranges, threshold=op
             continue
         if f_min >= f_max:
             continue
-        usable[feat] = [float(f_min), float(f_max)]
+        low_val, high_val = float(f_min), float(f_max)
+        usable[feat] = [low_val, high_val]
+        base_ranges[feat] = (low_val, high_val)
     if not usable:
         return None, {}, None
     best_solution = None
@@ -307,7 +460,20 @@ def binary_search_normal_ranges(base_row, features, feature_ranges, threshold=op
                 updated = True
         if not updated:
             break
-    return best_solution, {feat: tuple(bounds) for feat, bounds in usable.items()}, best_prob
+    adjusted_ranges = {}
+    for feat, bounds in usable.items():
+        base_low, base_high = base_ranges.get(feat, (bounds[0], bounds[1]))
+        base_span = base_high - base_low
+        cur_span = bounds[1] - bounds[0]
+        if base_span > 0:
+            min_span = max(base_span * min_span_ratio, min_span_absolute)
+            if cur_span < min_span:
+                center = (bounds[0] + bounds[1]) / 2.0
+                new_low = max(base_low, center - min_span / 2.0)
+                new_high = min(base_high, center + min_span / 2.0)
+                bounds = [new_low, new_high]
+        adjusted_ranges[feat] = (float(bounds[0]), float(bounds[1]))
+    return best_solution, adjusted_ranges, best_prob
 
 
 def evaluate_categorical_candidates(base_row, feature, choices, top_k=3):
@@ -334,13 +500,13 @@ def recommend_ranges(base_row, focus_features):
     recommendations = {}
     best_prob = None
 
-    numeric_targets = [feat for feat in focus_features if feat in numeric_cols]
-    categorical_targets = [feat for feat in focus_features if feat in categorical_cols]
+    numeric_targets = [feat for feat in focus_features if feat in numeric_cols_ui]
+    categorical_targets = [feat for feat in focus_features if feat in categorical_cols_ui]
 
     numeric_ranges = {feat: NUMERIC_FEATURE_RANGES.get(feat) for feat in numeric_targets if NUMERIC_FEATURE_RANGES.get(feat)}
 
     if len(numeric_ranges) >= 2:
-        solution, final_ranges, prob_multi = binary_search_normal_ranges(base_row, list(numeric_ranges.keys()), numeric_ranges, threshold=operating_threshold)
+        solution, final_ranges, prob_multi = binary_search_normal_ranges(base_row, list(numeric_ranges.keys()), numeric_ranges, threshold=operating_threshold, min_span_ratio=MIN_RECOMMENDATION_SPAN_RATIO, min_span_absolute=MIN_RECOMMENDATION_SPAN_ABS)
         if solution:
             for feat, mid in solution.items():
                 bounds = final_ranges.get(feat, numeric_ranges.get(feat))
@@ -359,7 +525,7 @@ def recommend_ranges(base_row, focus_features):
                 best_prob = prob_multi if best_prob is None else min(best_prob, prob_multi)
 
     for feat, bounds in numeric_ranges.items():
-        details = find_normal_range_binary_fixed(base_row, feat, bounds, threshold=operating_threshold)
+        details = find_normal_range_binary_fixed(base_row, feat, bounds, threshold=operating_threshold, min_span_ratio=MIN_RECOMMENDATION_SPAN_RATIO, min_span_absolute=MIN_RECOMMENDATION_SPAN_ABS)
         if not details:
             continue
         record = recommendations.get(feat, {"type": "numeric"})
@@ -393,6 +559,8 @@ def recommend_ranges(base_row, focus_features):
     if best_prob is not None:
         recommendations["best_probability"] = float(best_prob)
     return recommendations
+
+
 
 def format_value(value):
     if isinstance(value, (int, np.integer)):
@@ -434,13 +602,41 @@ body {
     background: #ffffff;
     border-radius: 0 0 16px 16px;
 }
-.input-item { margin-bottom: 20px; }
+.input-item {
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.normal-range-bar {
+    display: none;
+}
+.normal-range-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 0%;
+    background: #0d6efd;
+    border-radius: 4px;
+    transition: left 0.2s ease, width 0.2s ease;
+}
+.normal-range-label {
+    display: none;
+}
 .irs--shiny .irs-bar { background: #2A2D30; }
 .irs--shiny .irs-handle { border: 2px solid #142D4A; background: white; }
 .irs--shiny .irs-from, .irs--shiny .irs-to, .irs--shiny .irs-single { background: #2A2D30; }
 #predict:hover { background: #b91f1f !important; transform: translateY(-1px); }
 #load_defect_sample:hover { background: #a8a6a6 !important; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(194, 192, 192, 0.4) !important; }
-.hidden { display: none !important; }
+#apply_recommendations:hover { background: #7cd96a !important; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(124, 217, 106, 0.4) !important; }
+.hidden { display: none !IMPORTANT; }
+#settings-button svg {
+    transition: transform 0.2s;
+}
+#settings-button.open svg {
+    transform: rotate(180deg);
+}
 #draggable-prediction {
     background: white;
     border-radius: 16px;
@@ -462,59 +658,257 @@ body {
     font-weight: 600;
     color: #142D4A;
 }
-.shap-plot-card img {
-    width: 100%;
-    height: auto;
-    border-radius: 12px;
-}
 .shap-plot-empty {
     text-align: center;
     color: #6c757d;
     font-size: 13px;
     padding: 24px 12px;
-}</style>
-<script>
-function toggleAnalysisAccordion(evt, id) {
-    if (evt) {
-        evt.preventDefault();
-        evt.stopPropagation();
-    }
-    const panel = document.getElementById(id);
-    if (!panel) {
-        return;
-    }
-    const isHidden = window.getComputedStyle(panel).display === 'none';
-    panel.style.display = isHidden ? 'block' : 'none';
 }
-function togglePredictionCard() { document.getElementById('draggable-prediction').classList.toggle('hidden'); }
-let isDragging = false, currentX, currentY, initialX, initialY, xOffset = 0, yOffset = 0;
-document.addEventListener('DOMContentLoaded', function() {
-    const drag = document.getElementById('draggable-prediction');
-    if (drag) {
-        const header = drag.querySelector('.card-header');
-        if (header) {
-            header.addEventListener('mousedown', e => { initialX = e.clientX - xOffset; initialY = e.clientY - yOffset; isDragging = true; });
-            document.addEventListener('mousemove', e => { if (isDragging) { e.preventDefault(); currentX = e.clientX - initialX; currentY = e.clientY - initialY; xOffset = currentX; yOffset = currentY; drag.style.transform = `translate(${currentX}px, ${currentY}px)`; }});
-            document.addEventListener('mouseup', () => { initialX = currentX; initialY = currentY; isDragging = false; });
+
+.shap-plot-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+</style>
+"""
+custom_js = """
+<script>
+(function() {
+    const FAIL_COLOR = '#dc3545';
+    const NORMAL_COLOR = '#0d6efd';
+    const BASE_COLOR = '#f8d7da';
+    const HANDLER_ID = 'update-normal-range';
+    const MAX_ATTEMPTS = 120;
+    const RETRY_DELAY = 100;
+    const APPLY_RETRY_LIMIT = 25;
+    const APPLY_RETRY_DELAY = 120;
+
+    function resetBar(id) {
+        const bar = document.getElementById(id + '_normal_bar');
+        const primary = document.getElementById(id + '_normal_fill');
+        const label = document.getElementById(id + '_normal_label');
+        if (bar) {
+            bar.style.background = BASE_COLOR;
+        }
+        if (primary) {
+            primary.style.left = '0%';
+            primary.style.width = '0%';
+        }
+        if (label) {
+            label.textContent = '';
         }
     }
-    const btn = document.getElementById('settings-button');
-    if (btn) {
-        btn.addEventListener('click', togglePredictionCard);
-        btn.addEventListener('mouseenter', function() { this.style.transform = 'rotate(90deg)'; });
-        btn.addEventListener('mouseleave', function() { this.style.transform = 'rotate(0deg)'; });
+
+    function applyBarRange(id, info, attempt = 0) {
+        const bar = document.getElementById(id + '_normal_bar');
+        const primary = document.getElementById(id + '_normal_fill');
+        const label = document.getElementById(id + '_normal_label');
+        if (!bar || !primary) {
+            if (attempt < APPLY_RETRY_LIMIT) {
+                setTimeout(() => applyBarRange(id, info, attempt + 1), APPLY_RETRY_DELAY);
+            } else {
+                console.warn('normal-range:element-missing', { id, info });
+            }
+            return;
+        }
+        const start = Number(info.start_pct);
+        const width = Number(info.width_pct);
+        if (!Number.isFinite(start) || !Number.isFinite(width)) {
+            resetBar(id);
+            return;
+        }
+        const safeStart = Math.max(0, Math.min(100, start));
+        let safeWidth = Math.max(0, Math.min(100, width));
+        if (safeStart + safeWidth > 100) {
+            safeWidth = 100 - safeStart;
+        }
+        const end = safeStart + safeWidth;
+        if (primary) {
+            primary.style.left = safeStart + '%';
+            primary.style.width = safeWidth + '%';
+        }
+        if (bar) {
+            bar.style.background = `linear-gradient(to right, ${FAIL_COLOR} 0%, ${FAIL_COLOR} ${safeStart}%, ${NORMAL_COLOR} ${safeStart}%, ${NORMAL_COLOR} ${end}%, ${FAIL_COLOR} ${end}%, ${FAIL_COLOR} 100%)`;
+        }
+        if (label && typeof info.label_text === 'string') {
+            label.textContent = info.label_text;
+        }
+        console.debug('normal-range:update', { id, start: safeStart, width: safeWidth, info, attempt });
     }
-});
+
+    function registerHandler() {
+        if (!window.Shiny || !Shiny.addCustomMessageHandler) {
+            return false;
+        }
+        if (window.__normalRangeHandlerRegistered) {
+            return true;
+        }
+        Shiny.addCustomMessageHandler(HANDLER_ID, function(message) {
+            const features = message.features || [];
+            console.debug('normal-range:reset', features);
+            features.forEach(function(id) {
+                resetBar(id);
+            });
+            const ranges = message.ranges || {};
+            Object.keys(ranges).forEach(function(id) {
+                applyBarRange(id, ranges[id]);
+            });
+        });
+        window.__normalRangeHandlerRegistered = true;
+        console.debug('normal-range:handler-registered');
+        return true;
+    }
+
+    if (!registerHandler()) {
+        let attempts = 0;
+        const timer = setInterval(function() {
+            attempts += 1;
+            if (registerHandler() || attempts >= MAX_ATTEMPTS) {
+                clearInterval(timer);
+                if (attempts >= MAX_ATTEMPTS) {
+                    console.warn('normal-range:failed-to-register');
+                }
+            }
+        }, RETRY_DELAY);
+        document.addEventListener('shiny:connected', function onConnect() {
+            if (registerHandler()) {
+                clearInterval(timer);
+            }
+        }, { once: true });
+    }
+
+    function bindPredictionToggle(attempt = 0) {
+        const button = document.getElementById('settings-button');
+        const panel = document.getElementById('draggable-prediction');
+        if (button && panel) {
+            if (button.dataset.toggleBound === '1') {
+                return true;
+            }
+            button.dataset.toggleBound = '1';
+            button.classList.toggle('open', !panel.classList.contains('hidden'));
+            button.addEventListener('click', function() {
+                const isHidden = panel.classList.toggle('hidden');
+                button.classList.toggle('open', !isHidden);
+            });
+            return true;
+        }
+        if (attempt >= MAX_ATTEMPTS) {
+            console.warn('prediction-toggle:failed-to-bind');
+            return false;
+        }
+        setTimeout(function() {
+            bindPredictionToggle(attempt + 1);
+        }, RETRY_DELAY);
+        return false;
+    }
+
+    function setupPredictionDrag(attempt = 0) {
+        const panel = document.getElementById('draggable-prediction');
+        const header = panel ? panel.querySelector('.card-header') : null;
+        if (panel && header) {
+            if (panel.dataset.dragBound === '1') {
+                return true;
+            }
+            panel.dataset.dragBound = '1';
+            let dragging = false;
+            let offsetX = 0;
+            let offsetY = 0;
+
+            function stopDrag() {
+                if (!dragging) {
+                    return;
+                }
+                dragging = false;
+                document.removeEventListener('mousemove', onPointerMove);
+                document.removeEventListener('mouseup', stopDrag);
+                document.removeEventListener('touchmove', onPointerMove);
+                document.removeEventListener('touchend', stopDrag);
+                document.removeEventListener('touchcancel', stopDrag);
+            }
+
+            function onPointerMove(event) {
+                if (!dragging) {
+                    return;
+                }
+                const point = event.touches && event.touches[0] ? event.touches[0] : event;
+                const clientX = point.clientX;
+                const clientY = point.clientY;
+                if (typeof clientX !== 'number' || typeof clientY !== 'number') {
+                    return;
+                }
+                const maxLeft = Math.max(0, window.innerWidth - panel.offsetWidth);
+                const maxTop = Math.max(0, window.innerHeight - panel.offsetHeight);
+                const nextLeft = Math.min(Math.max(0, clientX - offsetX), maxLeft);
+                const nextTop = Math.min(Math.max(0, clientY - offsetY), maxTop);
+                panel.style.left = nextLeft + 'px';
+                panel.style.top = nextTop + 'px';
+                if (event.cancelable) {
+                    event.preventDefault();
+                }
+            }
+
+            function startDrag(event) {
+                const point = event.touches && event.touches[0] ? event.touches[0] : event;
+                const rect = panel.getBoundingClientRect();
+                offsetX = point.clientX - rect.left;
+                offsetY = point.clientY - rect.top;
+                panel.style.right = 'auto';
+                panel.style.bottom = 'auto';
+                panel.style.left = rect.left + 'px';
+                panel.style.top = rect.top + 'px';
+                dragging = true;
+                document.addEventListener('mousemove', onPointerMove);
+                document.addEventListener('mouseup', stopDrag);
+                document.addEventListener('touchmove', onPointerMove, { passive: false });
+                document.addEventListener('touchend', stopDrag);
+                document.addEventListener('touchcancel', stopDrag);
+                if (event.cancelable) {
+                    event.preventDefault();
+                }
+            }
+
+            header.addEventListener('mousedown', startDrag);
+            header.addEventListener('touchstart', startDrag, { passive: false });
+            return true;
+        }
+        if (attempt >= MAX_ATTEMPTS) {
+            console.warn('prediction-drag:failed-to-bind');
+            return false;
+        }
+        setTimeout(function() {
+            setupPredictionDrag(attempt + 1);
+        }, RETRY_DELAY);
+        return false;
+    }
+
+    function initializePredictionPanel() {
+        bindPredictionToggle();
+        setupPredictionDrag();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function onReady() {
+            initializePredictionPanel();
+        }, { once: true });
+    } else {
+        initializePredictionPanel();
+    }
+    document.addEventListener('shiny:connected', function() {
+        initializePredictionPanel();
+    });
+})();
 </script>
 """
 
+
 def create_input_metadata():
     metadata = {}
-    for col in categorical_cols:
+    for col in categorical_cols_ui:
         values = sorted([str(v) for v in df[col].dropna().unique()])
         if values:
             metadata[col] = {"type": "categorical", "choices": values, "default": values[0]}
-    for col in numeric_cols:
+    for col in numeric_cols_ui:
         s = df[col].dropna()
         if len(s) == 0:
             continue
@@ -525,8 +919,13 @@ def create_input_metadata():
         step = max(1, round((vmax - vmin) / 200.0)) if (s.round() == s).all() else (vmax - vmin) / 200.0
         metadata[col] = {"type": "numeric", "min": vmin, "max": vmax, "value": vdef, "step": step}
     return metadata
-
 input_metadata = create_input_metadata()
+
+NUMERIC_SLIDER_IDS = [
+    col
+    for col in numeric_cols_ui
+    if input_metadata.get(col, {}).get("type") == "numeric"
+]
 
 def create_widgets(cols, is_categorical=False):
     widgets = []
@@ -536,20 +935,42 @@ def create_widgets(cols, is_categorical=False):
         meta = input_metadata[col]
         label = COLUMN_NAMES_KR.get(col, col)
         if is_categorical:
-            widgets.append(ui.div(ui.input_select(col, label, choices=meta["choices"], selected=meta["default"]), class_="input-item"))
+            widgets.append(
+                ui.div(
+                    ui.input_select(col, label, choices=meta["choices"], selected=meta["default"]),
+                    class_="input-item",
+                )
+            )
         else:
-            widgets.append(ui.div(ui.input_slider(col, label, min=meta["min"], max=meta["max"], value=meta["value"], step=meta["step"]), class_="input-item"))
+            slider = ui.input_slider(
+                col,
+                label,
+                min=meta["min"],
+                max=meta["max"],
+                value=meta["value"],
+                step=meta["step"],
+            )
+            bar = ui.div(
+                ui.div(id=f"{col}_normal_fill", class_="normal-range-fill"),
+                id=f"{col}_normal_bar",
+                class_="normal-range-bar",
+            )
+            label_div = ui.div(
+                "",
+                id=f"{col}_normal_label",
+                class_="normal-range-label",
+            )
+            widgets.append(ui.div(slider, bar, label_div, class_="input-item"))
     return widgets
-
 def panel_body():
-    cat_widgets = create_widgets(categorical_cols, True)
-    num_widgets = create_widgets(numeric_cols, False)
+    cat_widgets = create_widgets(categorical_cols_ui, True)
+    num_widgets = create_widgets(numeric_cols_ui, False)
 
     cat_rows = [ui.layout_columns(*cat_widgets[i:i+4], col_widths=[3, 3, 3, 3]) for i in range(0, len(cat_widgets), 4)]
     num_rows = [ui.layout_columns(*num_widgets[i:i+4], col_widths=[3, 3, 3, 3]) for i in range(0, len(num_widgets), 4)]
 
     return ui.page_fluid(
-        ui.HTML(custom_css),
+        ui.HTML(custom_css + custom_js),
         ui.div(
             ui.div(
                 ui.div("예측 결과", class_="card-header", style="background: #2A2D30; color: white; padding: 16px 20px; border-radius: 16px 16px 0 0; font-weight: 600; cursor: move;"),
@@ -559,6 +980,7 @@ def panel_body():
                     ui.div(ui.output_ui("shap_top_features"), style="margin-bottom: 12px; font-size: 13px; color: #495057;"),
                     ui.div(ui.output_ui("recommendation_text"), style="margin-bottom: 16px; font-size: 13px; color: #495057;"),
                     ui.input_action_button("predict", "불량 여부 예측", style="width: 100%; background: #dc3545; color: white; border: none; border-radius: 10px; padding: 12px 24px; font-weight: 600; margin-bottom: 10px;"),
+                    ui.input_action_button("apply_recommendations", "추천 정상값 적용", style="width: 100%; background: #9BE564; color: #2c3e50; border: none; border-radius: 10px; padding: 12px 24px; font-weight: 600; margin-bottom: 10px;"),
                     ui.input_action_button("load_defect_sample", "불량 샘플 랜덤 추출", style="width: 100%; background: #C2C0C0; color: #2c3e50; border: none; border-radius: 10px; padding: 12px 24px; font-weight: 600;"),
                     style="background: white; padding: 20px; border-radius: 0 0 16px 16px;"
                 )
@@ -597,9 +1019,25 @@ def panel_body():
                 ui.div(
                     ui.output_ui("defect_sample_table"),
                     ui.layout_columns(
-                        ui.div(ui.output_plot("shap_force_plot"), class_="shap-plot-card"),
-                        ui.div(ui.output_plot("shap_waterfall_plot"), class_="shap-plot-card"),
-                        col_widths=[6, 6]
+                        ui.column(
+                            12,
+                            ui.div(
+                                ui.output_plot("shap_force_plot", height="1010px"),
+                                class_="shap-plot-card"
+                            )
+                        ),
+                        ui.column(
+                            12,
+                            ui.div(
+                                ui.output_plot("shap_force_overview_plot", height="480px"),
+                                class_="shap-plot-card",
+                                style="margin-bottom: 16px;"
+                            ),
+                            ui.div(
+                                ui.output_plot("shap_waterfall_plot", height="480px"),
+                                class_="shap-plot-card"
+                            )
+                        )
                     ),
                     id="defect_sample_content",
                     class_="accordion-content",
@@ -607,13 +1045,24 @@ def panel_body():
                 ),
                 class_="accordion-section"
             ),
-            style="padding: 24px; max-width: 1400px; margin: 0 auto;"
+            style="padding: 24px; max-width: 1900px; margin: 0 auto;"
         )
     )
 
 def panel():
     return ui.nav_panel("예측 분석", panel_body())
 def server(input, output, session):
+    def _schedule_normal_range_update(ranges, features):
+        payload = {
+            "ranges": {k: v for k, v in ranges.items()},
+            "features": list(features),
+        }
+
+        def _send():
+            session.send_custom_message("update-normal-range", payload)
+
+        session.on_flushed(_send, once=True)
+
     prediction_state = reactive.Value(None)
     active_sample = reactive.Value(None)
     show_defect_samples = reactive.Value(False)
@@ -724,12 +1173,129 @@ def server(input, output, session):
                     "contribution": contrib
                 })
             recommendations = recommend_ranges(input_row, [item["name"] for item in top_features])
+            normal_range_payload = {}
+            for feat, info in recommendations.items():
+                if feat == "best_probability" or not isinstance(info, dict):
+                    continue
+                if info.get("type") != "numeric":
+                    continue
+                meta = input_metadata.get(feat, {})
+                if not isinstance(meta, dict) or meta.get("type") != "numeric":
+                    continue
+                normal_min = info.get("min")
+                normal_max = info.get("max")
+                if normal_min is None or normal_max is None:
+                    continue
+                slider_min = meta.get("min")
+                slider_max = meta.get("max")
+                if slider_min is None or slider_max is None:
+                    continue
+                slider_min_f = float(slider_min)
+                slider_max_f = float(slider_max)
+                span = slider_max_f - slider_min_f
+                if span <= 0:
+                    continue
+                normal_min_f = float(normal_min)
+                normal_max_f = float(normal_max)
+                start_pct = max(0.0, min(100.0, ((normal_min_f - slider_min_f) / span) * 100.0))
+                end_pct = max(0.0, min(100.0, ((normal_max_f - slider_min_f) / span) * 100.0))
+                if end_pct < start_pct:
+                    start_pct, end_pct = end_pct, start_pct
+                width_pct = max(0.0, end_pct - start_pct)
+                fail_segments = []
+                if start_pct > 0.0:
+                    fail_segments.append(f"{slider_min_f:.1f}~{normal_min_f:.1f}")
+                if end_pct < 100.0:
+                    fail_segments.append(f"{normal_max_f:.1f}~{slider_max_f:.1f}")
+                if fail_segments:
+                    label_text = "불량 범위 약 " + ", ".join(fail_segments)
+                else:
+                    label_text = "불량 범위 없음"
+                normal_range_payload[feat] = {
+                    "normal_min": normal_min_f,
+                    "normal_max": normal_max_f,
+                    "slider_min": slider_min_f,
+                    "slider_max": slider_max_f,
+                    "start_pct": float(start_pct),
+                    "width_pct": float(width_pct),
+                    "label_text": label_text,
+                }
+            _schedule_normal_range_update(normal_range_payload, NUMERIC_SLIDER_IDS)
             result["top_features"] = top_features
             result["recommendations"] = recommendations
             result["input_row"] = input_row
             prediction_state.set(result)
         except Exception as exc:
             prediction_state.set({"error": str(exc)})
+            _schedule_normal_range_update({}, NUMERIC_SLIDER_IDS)
+
+    @reactive.effect
+    @reactive.event(input.apply_recommendations)
+    def _apply_recommendations():
+        details = prediction_state.get()
+        if not details or details.get("error"):
+            return
+        recommendations = details.get("recommendations") or {}
+        if not recommendations:
+            return
+        target_features = []
+        for item in details.get("top_features", []) or []:
+            name = item.get("name")
+            if name:
+                target_features.append(name)
+        if not target_features:
+            target_features = [feat for feat in recommendations.keys() if feat != "best_probability"]
+        updates = {}
+        for feat in target_features:
+            info = recommendations.get(feat)
+            meta = input_metadata.get(feat)
+            if not info or not meta:
+                continue
+            if meta.get("type") == "numeric":
+                value = None
+                for example in info.get("examples") or []:
+                    try:
+                        value = float(example)
+                        break
+                    except (TypeError, ValueError):
+                        continue
+                if value is None:
+                    min_val = info.get("min")
+                    max_val = info.get("max")
+                    if min_val is not None and max_val is not None:
+                        try:
+                            value = (float(min_val) + float(max_val)) / 2.0
+                        except (TypeError, ValueError):
+                            value = None
+                if value is None:
+                    continue
+                try:
+                    min_bound = float(meta.get("min", value))
+                    max_bound = float(meta.get("max", value))
+                except (TypeError, ValueError):
+                    min_bound = value
+                    max_bound = value
+                clipped = max(min_bound, min(max_bound, float(value)))
+                updates[feat] = float(clipped)
+            elif meta.get("type") == "categorical":
+                values = info.get("values") or []
+                if not values:
+                    continue
+                candidate = str(values[0])
+                choices = meta.get("choices", [])
+                if choices and candidate not in choices:
+                    fallback = next((choice for choice in choices if choice in values), None)
+                    if fallback is None:
+                        continue
+                    candidate = fallback
+                updates[feat] = candidate
+        if not updates:
+            return
+        for feat, value in updates.items():
+            if isinstance(value, (int, float)):
+                session.send_input_message(feat, {"value": float(value)})
+            else:
+                session.send_input_message(feat, {"value": str(value)})
 
     @output
     @render.ui
@@ -778,45 +1344,249 @@ def server(input, output, session):
     @output
     @render.plot
     def shap_force_plot():
+        details = prediction_state.get()
+        if not details or details.get("error"):
+            return _shap_placeholder()
+        focus_entries = details.get("top_features", []) or []
+        focus_features = [item.get("name") for item in focus_entries if isinstance(item, dict) and item.get("name")]
+        focus_features = [feat for feat in focus_features if feat in all_cols]
+        if not focus_features:
+            return _shap_placeholder("SHAP 상위 변수를 확인할 수 없습니다.")
+        try:
+            dist_data = compute_feature_distribution_data(focus_features)
+            if not dist_data:
+                return _shap_placeholder("분포 데이터를 계산할 수 없습니다.")
+            shap_current = details.get("shap_aggregated", {}) or {}
+            input_row = details.get("input_row") or {}
+            recommendations = details.get("recommendations", {}) or {}
+            from matplotlib.lines import Line2D
+            from matplotlib.patches import Patch
+            legend_handles = [
+                Patch(facecolor="#4dabf7", alpha=0.85, label="정상"),
+                Patch(facecolor="#ff8787", alpha=0.85, label="불량"),
+                Line2D([0, 1], [0, 0], color="#ff922b", linewidth=2, label="현재 값"),
+            ]
+            recommend_handle = Patch(facecolor="#e6fcf5", alpha=0.5, edgecolor="none", label="추천 범위")
+            show_recommend = False
+            fig_height = max(20, 6.5 * len(focus_features))
+            fig, axes = plt.subplots(len(focus_features), 1, figsize=(11.5, fig_height), sharex=False)
+            if not isinstance(axes, np.ndarray):
+                axes = np.array([axes])
+            axes = axes.flatten()
+            for ax, feat in zip(axes, focus_features):
+                info = dist_data.get(feat)
+                if not info:
+                    ax.axis("off")
+                    ax.text(0.5, 0.5, "데이터 없음", transform=ax.transAxes, ha="center", va="center", fontsize=10, color="#6c757d")
+                    continue
+                label = COLUMN_NAMES_KR.get(feat, feat)
+                current_value = input_row.get(feat, "-")
+                rec = recommendations.get(feat, {}) if isinstance(recommendations, dict) else {}
+                ax.set_title(label, fontsize=9, pad=5)
+                if info.get("type") == "numeric":
+                    pass_vals = np.array(info.get("pass", []), dtype=float)
+                    fail_vals = np.array(info.get("fail", []), dtype=float)
+                    valid_pass = pass_vals[np.isfinite(pass_vals)]
+                    valid_fail = fail_vals[np.isfinite(fail_vals)]
+                    combined = np.concatenate([valid_pass, valid_fail]) if valid_pass.size + valid_fail.size > 0 else np.array([])
+                    if combined.size == 0:
+                        ax.axis("off")
+                        ax.text(0.5, 0.5, "숫자 데이터 부족", transform=ax.transAxes, ha="center", va="center", fontsize=10, color="#6c757d")
+                        continue
+                    bins = min(25, max(6, int(np.sqrt(combined.size))))
+                    ax.hist(valid_pass, bins=bins, density=True, alpha=0.45, color="#4dabf7", edgecolor="white")
+                    if valid_fail.size:
+                        ax.hist(valid_fail, bins=bins, density=True, alpha=0.55, color="#ff8787", edgecolor="white")
+                    try:
+                        current_numeric = float(current_value)
+                        ax.axvline(current_numeric, color="#ff922b", linewidth=2)
+                    except (TypeError, ValueError):
+                        pass
+                    rec_min = rec.get("min")
+                    rec_max = rec.get("max")
+                    if rec_min is not None and rec_max is not None:
+                        try:
+                            rec_min = float(rec_min)
+                            rec_max = float(rec_max)
+                            if rec_max < rec_min:
+                                rec_min, rec_max = rec_max, rec_min
+                            ax.axvspan(rec_min, rec_max, color="#e6fcf5", alpha=0.45)
+                            show_recommend = True
+                        except (TypeError, ValueError):
+                            pass
+                    if combined.size > 0:
+                        q_low, q_high = np.nanpercentile(combined, [1.5, 98.5])
+                        span = q_high - q_low
+                        margin = span * 0.15 if span > 0 else max(abs(q_low), abs(q_high), 1.0) * 0.15
+                        ax.set_xlim(q_low - margin, q_high + margin)
+                else:
+                    pass_vals = info.get("pass", [])
+                    fail_vals = info.get("fail", [])
+                    categories = list(dict.fromkeys(pass_vals + fail_vals)) or ["missing"]
+                    x = np.arange(len(categories))
+                    pass_counts = pd.Series(pass_vals).value_counts(normalize=True)
+                    fail_counts = pd.Series(fail_vals).value_counts(normalize=True) if fail_vals else pd.Series(dtype=float)
+                    pass_heights = [pass_counts.get(cat, 0.0) for cat in categories]
+                    fail_heights = [fail_counts.get(cat, 0.0) for cat in categories]
+                    width = 0.35
+                    ax.bar(x - width / 2, pass_heights, width=width, color="#4dabf7", alpha=0.85)
+                    ax.bar(x + width / 2, fail_heights, width=width, color="#ff8787", alpha=0.85)
+                    ax.set_xticks(x)
+                    ax.set_xticklabels(categories, rotation=0, fontsize=7)
+                    ax.set_ylabel("비율", fontsize=9)
+                    ax.yaxis.set_major_locator(plt.MaxNLocator(nbins=4))
+                    ax.tick_params(axis="y", labelsize=8)
+                    current_cat = str(current_value)
+                    if current_cat in categories:
+                        idx_cat = categories.index(current_cat)
+                        marker_height = max(pass_heights[idx_cat], fail_heights[idx_cat]) + 0.03
+                        ax.scatter([x[idx_cat]], [marker_height], marker="v", color="#ff922b", s=50, zorder=3)
+                ax.grid(axis="y", linestyle=":", linewidth=0.4, color="#dee2e6", alpha=0.6)
+            axes[-1].set_xlabel("값", fontsize=9)
+            for ax in axes:
+                ax.tick_params(axis="x", labelsize=8)
+            handles = legend_handles.copy()
+            if show_recommend:
+                handles.append(recommend_handle)
+            fig.subplots_adjust(top=0.9, bottom=0.06, hspace=0.65)
+            fig.suptitle("상위 변수 값 분포 비교", fontsize=11, y=0.975)
+            return fig
+        except Exception as exc:
+            return _shap_placeholder(f"분포 시각화 오류: {exc}")
+
+
+    @output
+    @output
+    @render.plot
+    def shap_force_overview_plot():
+        details = prediction_state.get()
+        if not details or details.get("error"):
+            return _shap_placeholder("예측 결과를 먼저 계산하세요.", figsize=(7.0, 3.2))
         explanation = _current_shap_explanation()
         if explanation is None:
-            return _shap_placeholder()
+            return _shap_placeholder("예측 결과를 먼저 계산하세요.", figsize=(7.0, 3.2))
         try:
-            order = np.argsort(np.abs(explanation.values))[::-1]
-            if len(order) > 20:
-                order = order[:20]
-            focus_exp = explanation[order]
-            plt.close("all")
+            values_all = np.array(explanation.values).reshape(-1)
+            data_all = np.array(explanation.data).reshape(-1) if explanation.data is not None else None
+            feature_names_all = list(explanation.feature_names or [])
+            if not feature_names_all:
+                feature_names_all = [f"feature_{idx}" for idx in range(len(values_all))]
+            order = np.argsort(np.abs(values_all))[::-1]
+            top_k = min(2, len(order))
+            top_indices = order[:top_k]
+            label_names = [COLUMN_NAMES_KR.get(feature_names_all[i], feature_names_all[i]) if i in top_indices else '' for i in range(len(feature_names_all))]
+            plt.close('all')
             shap.force_plot(
-                focus_exp.base_values,
-                focus_exp.values,
-                focus_exp.data,
-                feature_names=focus_exp.feature_names,
+                explanation.base_values,
+                explanation.values,
+                explanation.data,
+                feature_names=label_names,
                 matplotlib=True,
                 show=False,
+                text_rotation=0
             )
             fig = plt.gcf()
-            fig.set_size_inches(6, 2.8)
+            fig.set_size_inches(7.0, 3.2)
             fig.tight_layout()
+            fig.suptitle('상위 2개 변수 Force Plot', fontsize=11, y=0.98)
+            ax = fig.axes[0] if fig.axes else None
+            if ax is not None:
+                for text_obj in list(ax.texts):
+                    idx = getattr(text_obj, 'text_label', None)
+                    txt = text_obj.get_text()
+                    if idx is not None and idx in top_indices and txt:
+                        if '=' in txt:
+                            text_obj.set_text(txt.split('=')[0].strip())
+                    else:
+                        text_obj.set_alpha(0.0)
+                line_count = 0
+                for line in list(ax.lines):
+                    idx = getattr(line, 'text_label', None)
+                    if idx is not None:
+                        if idx in top_indices and line_count < top_k:
+                            line_count += 1
+                        else:
+                            line.set_alpha(0.0)
             return fig
         except Exception:
-            return _shap_placeholder("SHAP force plot을 생성하는 중 문제가 발생했습니다.")
-
+            return _shap_placeholder("SHAP force plot을 생성하는 중 문제가 발생했습니다.", figsize=(7.0, 3.2))
     @output
     @render.plot
     def shap_waterfall_plot():
         explanation = _current_shap_explanation()
         if explanation is None:
-            return _shap_placeholder(figsize=(6, 4.0))
+            return _shap_placeholder(figsize=(7.4, 5.2))
         try:
-            plt.close("all")
-            shap.plots.waterfall(explanation, max_display=15, show=False)
-            fig = plt.gcf()
-            fig.set_size_inches(6, 4.5)
-            fig.tight_layout()
+            values = np.array(explanation.values).reshape(-1)
+            feature_names = list(explanation.feature_names or [])
+            if not feature_names:
+                feature_names = [f"feature_{idx}" for idx in range(len(values))]
+            data_values = np.array(explanation.data).reshape(-1) if explanation.data is not None else None
+            order = np.argsort(np.abs(values))[::-1]
+            top_k = min(8, len(order))
+            order = order[:top_k]
+            values = values[order]
+            feature_names = [COLUMN_NAMES_KR.get(feature_names[idx], feature_names[idx]) for idx in order]
+            if data_values is not None:
+                data_values = data_values[order]
+            base_value = float(np.array(explanation.base_values).reshape(-1)[0]) if explanation.base_values is not None else 0.0
+            running = [base_value]
+            for val in values:
+                running.append(running[-1] + val)
+            final_value = running[-1]
+            fig, ax = plt.subplots(figsize=(7.4, 0.9 * (len(values) + 3)))
+            ax.set_facecolor("#f8f9fa")
+            fig.patch.set_facecolor("#f8f9fa")
+            y_positions = np.arange(len(values) + 2)
+            ax.barh(0, 0.001, left=base_value, color="#adb5bd", height=0.6)
+            ax.text(base_value, 0, f"기준값 {base_value:.2f}", ha="left", va="center", fontsize=9, color="#495057")
+            for idx, val in enumerate(values):
+                start = running[idx]
+                end = running[idx + 1]
+                width = end - start
+                left = min(start, end)
+                color = "#ff6b6b" if width >= 0 else "#4dabf7"
+                ax.barh(idx + 1, width=abs(width), left=left, height=0.65, color=color, alpha=0.9)
+                ax.plot([start, end], [idx + 1, idx + 1], color="#495057", linewidth=0.4)
+                marker_color = "#e03131" if width >= 0 else "#1c7ed6"
+                ax.scatter([end], [idx + 1], color=marker_color, s=24, zorder=3)
+                ax.text(end, idx + 1 + 0.18, f"{val:+.3f}", fontsize=8.5, ha="center", va="bottom", color="#212529")
+            ax.barh(len(values) + 1, 0.001, left=final_value, color="#212529", height=0.6)
+            ax.text(final_value, len(values) + 1, f"예측값 {final_value:.3f}", ha="left", va="center", fontsize=9, color="#212529")
+            labels = ["기준값"] + feature_names + ["예측값"]
+            ax.set_yticks(y_positions)
+            ax.set_yticklabels(labels, fontsize=9)
+            ax.invert_yaxis()
+            ax.set_xlabel("기여도 (SHAP value)", fontsize=10)
+            ax.axvline(0, color="#868e96", linewidth=0.8, linestyle="--", alpha=0.8)
+            ax.grid(axis="x", linestyle=":", linewidth=0.4, color="#ced4da", alpha=0.85)
+            ax.set_ylim(len(values) + 1.5, -0.5)
+            ax.set_title("Waterfall", fontsize=12, pad=12, color="#212529")
+            fig.subplots_adjust(left=0.32, right=0.97, top=0.94, bottom=0.08)
             return fig
         except Exception:
-            return _shap_placeholder("SHAP waterfall plot을 생성하는 중 문제가 발생했습니다.", figsize=(6, 4.0))
+            return _shap_placeholder("SHAP waterfall plot을 생성하는 중 문제가 발생했습니다.", figsize=(7.4, 5.2))
+
+        def fmt(value):
+            return "-" if value is None else format_value(value)
+
+        for status in statuses:
+            within = status.get("within", False)
+            color = "#28a745" if within else "#dc3545"
+            background = "#e7f6ec" if within else "#fdecef"
+            label = status.get("label", status.get("feature", ""))
+            current_val = fmt(status.get("current"))
+            min_val = fmt(status.get("min"))
+            max_val = fmt(status.get("max"))
+            body = (
+                f"<div style='border-radius:10px; padding:10px 12px; margin-bottom:8px; background:{background}; border-left:4px solid {color};'>"
+                f"<div style='font-weight:600; color:{color};'>{label}</div>"
+                f"<div style='font-size:12px; color:#495057;'>현재 {current_val} / 추천 {min_val} ~ {max_val}</div>"
+                "</div>"
+            )
+            items.append(body)
+        html = "<div><span style='font-weight:600;'>정상 구간 상태</span>" + "".join(items) + "</div>"
+        return ui.HTML(html)
 
     @output
     @render.ui
@@ -837,7 +1607,7 @@ def server(input, output, session):
                 min_val = format_value(info.get("min"))
                 max_val = format_value(info.get("max"))
                 examples = ", ".join(format_value(v) for v in info.get("examples", []))
-                lines.append(f"<li><strong>{label}</strong>: 추천 정상 범위 {min_val} ~ {max_val} (예시: {examples})</li>")
+                lines.append(f"<li><strong>{label}</strong>: 추천 정상 범위 {min_val} ~ {max_val} </li>")
             elif info.get("type") == "categorical":
                 values = ", ".join(info.get("values", []))
                 lines.append(f"<li><strong>{label}</strong>: 추천 정상 값 {values}</li>")
@@ -848,6 +1618,26 @@ def server(input, output, session):
 
 
 app = App(panel, server)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
