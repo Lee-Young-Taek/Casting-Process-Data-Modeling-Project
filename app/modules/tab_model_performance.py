@@ -10,8 +10,7 @@ import joblib
 import base64
 
 APP_DIR = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-REPORTS_DIR = PROJECT_ROOT / "reports"
+REPORTS_DIR = APP_DIR / "data" / "reports"
 PREPROC_VERSION_PDF = REPORTS_DIR / "version_preprocessing_report.pdf"
 
 MODELS = ["LogisticRegression", "LightGBM", "RandomForest", "XGBoost"]
@@ -377,17 +376,17 @@ custom_css = """
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     width: 100%;
-    border: 1px solid #dee2e6;
+    border: 1px solid #cfd3d8;
     border-radius: 8px;
     overflow: hidden;
 }
 .metrics-grid > div {
-    aspect-ratio: 1 / 1;
+    aspect-ratio: 1 / 0.75;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-right: 1px solid #dee2e6;
-    border-bottom: 1px solid #dee2e6;
+    border-right: 1px solid #cfd3d8;
+    border-bottom: 1px solid #cfd3d8;
     font-size: 0.95rem;
     font-weight: 500;
     text-align: center;
@@ -400,7 +399,7 @@ custom_css = """
     border-bottom: none;
 }
 .metrics-grid__header {
-    background-color: #f8f9fa;
+    background-color: #e9ecef;
     font-weight: 600;
 }
 .metrics-grid__header--split {
@@ -415,10 +414,10 @@ custom_css = """
     justify-content: center;
 }
 .metrics-grid__header--split span:first-child {
-    border-bottom: 1px solid #dee2e6;
+    border-bottom: 1px solid #cfd3d8;
 }
 .metrics-grid__row-header {
-    background-color: #fdfdfd;
+    background-color: #f0f2f4;
     font-weight: 600;
     font-size: 0.85rem;
     line-height: 1.1;
@@ -427,6 +426,14 @@ custom_css = """
     background-color: #2A2D30;
     color: #ffffff;
     font-weight: 700;
+}
+.metrics-grid__row-border {
+    border-top: 1px solid #000000 !important;
+    border-bottom: 1px solid #000000 !important;
+}
+.metrics-grid__col-border {
+    border-left: 1px solid #000000 !important;
+    border-right: 1px solid #000000 !important;
 }
 .metrics-btn.active {
     background-color: #2A2D30 !important;
@@ -437,7 +444,7 @@ custom_css = """
 }
 .metric-detail-card {
     background-color: #ffffff;
-    border: 1px solid #e3e6eb;
+    border: 1px solid #cfd3d8;
     border-radius: 16px;
     padding: 20px 24px;
     height: auto;
@@ -467,17 +474,17 @@ custom_css = """
     text-align: left;
     font-weight: 600;
     color: #495057;
-    background-color: #f8f9fa;
-    border-top: 1px solid #e3e6eb;
-    border-left: 1px solid #e3e6eb;
+    background-color: #e9ecef;
+    border-top: 1px solid #cfd3d8;
+    border-left: 1px solid #cfd3d8;
 }
 .metric-detail-table td {
     padding: 10px 12px;
     text-align: right;
     font-weight: 600;
     color: #212529;
-    border-top: 1px solid #e3e6eb;
-    border-right: 1px solid #e3e6eb;
+    border-top: 1px solid #cfd3d8;
+    border-right: 1px solid #cfd3d8;
 }
 .metric-detail-table tr:first-child th,
 .metric-detail-table tr:first-child td {
@@ -486,17 +493,17 @@ custom_css = """
 }
 .metric-detail-table tr:last-child th {
     border-bottom-left-radius: 12px;
-    border-bottom: 1px solid #e3e6eb;
+    border-bottom: 1px solid #cfd3d8;
 }
 .metric-detail-table tr:last-child td {
     border-bottom-right-radius: 12px;
-    border-bottom: 1px solid #e3e6eb;
+    border-bottom: 1px solid #cfd3d8;
 }
 .importance-card {
     margin-top: 16px;
     padding: 16px 20px;
     background-color: #ffffff;
-    border: 1px solid #e3e6eb;
+    border: 1px solid #cfd3d8;
     border-radius: 16px;
 }
 .importance-card h4 {
@@ -506,7 +513,7 @@ custom_css = """
     color: #212529;
 }
 .insight-tabset .nav-tabs {
-    border-bottom: 1px solid #e3e6eb;
+    border-bottom: 1px solid #cfd3d8;
     margin-bottom: 0.75rem;
 }
 .insight-tabset .nav-link {
@@ -515,7 +522,7 @@ custom_css = """
 }
 .insight-tabset .nav-link.active {
     color: #2A2D30;
-    border-color: #e3e6eb #e3e6eb transparent;
+    border-color: #cfd3d8 #cfd3d8 transparent;
 }
 .insight-tabset {
     display: flex;
@@ -576,17 +583,32 @@ def _build_metrics_grid(metric_name: str) -> str:
         "</div>"
     )
     cells.append(split_header)
+    highlight_model = highlight_pair[0] if highlight_pair else None
+    highlight_version = highlight_pair[1] if highlight_pair else None
+
     for version in VERSIONS:
-        cells.append(f"<div class='metrics-grid__header'>{version}</div>")
+        header_classes = ["metrics-grid__header"]
+        if version == highlight_version:
+            header_classes.append("metrics-grid__col-border")
+        cells.append(f"<div class=\"{' '.join(header_classes)}\">{version}</div>")
 
     # Body rows
     for model in MODELS:
         display_label = MODEL_DISPLAY_LABELS.get(model, model)
-        cells.append("<div class='metrics-grid__row-header'>{}</div>".format(display_label))
+        row_header_classes = ["metrics-grid__row-header"]
+        if model == highlight_model:
+            row_header_classes.append("metrics-grid__row-border")
+        cells.append(
+            f"<div class=\"{' '.join(row_header_classes)}\">{display_label}</div>"
+        )
         for version in VERSIONS:
             value = metric_data.get(model, {}).get(version)
             cell_classes = ["metrics-grid__cell"]
 
+            if model == highlight_model:
+                cell_classes.append("metrics-grid__row-border")
+            if version == highlight_version:
+                cell_classes.append("metrics-grid__col-border")
             if highlight_pair and (model, version) == highlight_pair:
                 cell_classes.append("metrics-grid__cell--highlight")
 
@@ -683,19 +705,36 @@ def _build_importance_tab(model_name: str, version: str) -> ui.Tag:
         y="feature",
         orientation="h",
         title=None,
-        labels={"feature": "변수", "normalized": "중요도 비율"},
+        labels={"normalized": "비율"},
         text=plot_df["normalized"].map(_format_percent),
     )
     max_range = float(min(1.0, max(plot_df["normalized"].max() * 1.15, 0.2)))
     fig.update_layout(
         height=280,
-        margin=dict(l=10, r=10, t=10, b=10),
-        yaxis=dict(autorange=True),
+        margin=dict(l=40, r=20, t=10, b=10),
+        yaxis=dict(
+            autorange=True,
+            title=None,
+            ticklabelposition="outside",
+            ticklabelstandoff=10,
+        ),
         xaxis=dict(range=[0, max_range]),
         plot_bgcolor="white",
         showlegend=False,
     )
-    fig.update_traces(marker_color="#2A2D30", textposition="outside", cliponaxis=False)
+    base_rgb = np.array([210, 93, 93], dtype=float)
+    light_rgb = np.array([240, 181, 181], dtype=float)
+    n_bars = len(plot_df)
+    if n_bars > 1:
+        weights = np.linspace(0, 1, n_bars)[::-1]
+    else:
+        weights = np.array([0.0])
+    color_sequence = [
+        "#" + "".join(f"{int(round((1 - w) * base + w * light)):02x}" for base, light in zip(base_rgb, light_rgb))
+        for w in weights
+    ]
+
+    fig.update_traces(marker_color=color_sequence, textposition="outside", cliponaxis=False)
 
     return ui.div(
         ui.HTML(
@@ -757,7 +796,7 @@ def _build_pdp_tab(model_name: str, version: str) -> ui.Tag:
 def _build_insight_tabs(model_name: str, version: str) -> ui.Tag:
     navset = ui.navset_tab(
         ui.nav_panel("변수 중요도", _build_importance_tab(model_name, version), value="importance"),
-        ui.nav_panel("베스트 파라미터", _build_best_params_tab(model_name, version), value="best_params"),
+        ui.nav_panel("파라미터", _build_best_params_tab(model_name, version), value="best_params"),
         ui.nav_panel("PDP", _build_pdp_tab(model_name, version), value="pdp"),
         id="insight_nav",
         selected="importance",
@@ -773,30 +812,17 @@ def panel_body():
                     ui.card_header("모델 선택"),
                     ui.card_body(
                         ui.output_ui("metric_button_row"),
-                        ui.div(ui.output_ui("metrics_grid"), class_="mt-2"),
+                        ui.div(ui.output_ui("metrics_grid"), class_="mt-1"),
                         ui.div(
                             ui.download_button(
                                 "download_preproc_pdf",
                                 ui.HTML('<i class="fa-solid fa-file-pdf"></i> 버전별 전처리 PDF 다운로드'),
-                                style="""
-                                    background: linear-gradient(135deg, #ec685f 0%, #eb6056 100%);
-                                    color: white;
-                                    border: none;
-                                    padding: 10px 20px;
-                                    font-size: 15px;
-                                    font-weight: 600;
-                                    border-radius: 20px;
-                                    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.2);
-                                    transition: all 0.3s ease;
-                                    cursor: pointer;
-                                    display: inline-flex;
-                                    align-items: center;
-                                    gap: 8px;
-                                """
+                                class_="btn btn-outline-secondary",
+                                style="font-size:0.85rem; padding:0.45rem 1rem; gap:0.35rem; display:inline-flex; align-items:center;",
                             ),
-                            class_="d-flex w-100 justify-content-end",
+                            class_="d-flex w-100 justify-content-end mt-2",
                         ),
-                        class_="w-100 d-flex flex-column gap-3 flex-grow-1",
+                        class_="w-100 d-flex flex-column gap-2 flex-grow-1",
                     ),
                     class_="card-no-gap card-equal",
                 ),
